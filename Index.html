@@ -210,6 +210,13 @@ tr:active td{background:#f5fbfb}
 .modal-type-btn{flex:1;padding:11px 8px;border-radius:10px;border:2px solid #e5e7eb;background:#fff;font-size:14px;font-weight:700;cursor:pointer;color:#9ca3af;transition:all .15s;font-family:inherit}
 .modal-type-btn.active-sample{background:#e0f7f8;border-color:#0BBDC4;color:#0A6B70}
 .modal-type-btn.active-other{background:#f3f4f6;border-color:#374151;color:#374151}
+/* スナップ切り替え */
+.snap-toggle{display:flex;gap:4px;margin-left:auto}
+.snap-btn{padding:5px 10px;border-radius:8px;border:2px solid #d6eef0;background:#f5fbfb;font-size:12px;font-weight:700;cursor:pointer;color:#6b7a8d;font-family:inherit;transition:all .15s}
+.snap-btn.active{background:#0BBDC4;border-color:#0BBDC4;color:#fff}
+/* 細いバーの選択性改善 */
+.gcal-bar.narrow .gcal-bar-handle{width:8px;min-width:8px}
+.gcal-bar.narrow .gcal-bar-body{padding:0 10px 0 6px}
 </style>
 </head>
 <body>
@@ -308,6 +315,10 @@ tr:active td{background:#f5fbfb}
     <div class="card-ttl">
       📅 作業タイムライン
       <span class="tl-hint">右端ドラッグ→時間調整　バークリック→編集　＋をクリック→追加</span>
+      <div class="snap-toggle">
+        <button class="snap-btn active" onclick="setSnap(5)">5分</button>
+        <button class="snap-btn" onclick="setSnap(15)">15分</button>
+      </div>
     </div>
     <div class="gcal-wrap" id="gcal-wrap">
       <div class="gcal-inner" id="gcal-inner">
@@ -483,6 +494,7 @@ let colorIdx        = 0;
 let editingId       = null;
 let dragState       = null;
 let recentlyDragged = false;
+let snapMin         = 5;
 
 /* ======================== */
 /* 初期化                   */
@@ -771,10 +783,13 @@ function renderTimeline() {
       const showMin   = isLast && widthPx >= 120;
 
       const bar = document.createElement('div');
-      bar.className      = 'gcal-bar';
+      bar.className      = 'gcal-bar' + (widthPx < 36 ? ' narrow' : '');
       bar.dataset.id     = row.id;
       bar.dataset.action = 'edit';
       bar.style.cssText  = `left:${leftPx}px;width:${widthPx}px;top:${topPx}px;background:${row.color};`;
+      const titleLabel = row.type === 'other' ? (row.workType || 'その他') : (row.productName || '未設定');
+      const titleSub   = row.type === 'other' ? '' : (row.stageName || '—');
+      bar.title = titleLabel + (titleSub ? ' / ' + titleSub : '') + '  ' + row.minutes + '分';
       const barLabel = row.type === 'other' ? esc(row.workType || 'その他') : esc(row.productName || '未設定');
       const barSub   = row.type === 'other' ? '' : esc(row.stageName || '—');
       bar.innerHTML = `
@@ -830,6 +845,7 @@ function renderLegend() {
         ? esc(r.workType || 'その他')
         : `${esc(r.productName || '未設定')} / ${esc(r.stageName || '—')}`
       }</span>
+      <span style="font-size:12px;color:#6b7a8d;font-weight:700;margin-left:4px">${r.minutes}分</span>
     </div>
   `).join('');
 }
@@ -886,8 +902,8 @@ function onContentPointerDown(e) {
 function onDragMove(e) {
   if (!dragState) return;
   const { rowId, startX, startMin } = dragState;
-  const deltaMin = Math.round((e.clientX - startX) / MIN_PX / 5) * 5;
-  if (Math.abs(deltaMin) >= 5) dragState.moved = true;
+  const deltaMin = Math.round((e.clientX - startX) / MIN_PX / snapMin) * snapMin;
+  if (Math.abs(deltaMin) >= snapMin) dragState.moved = true;
   const row = tlRows.find(r => r.id === rowId);
   if (!row) return;
   row.minutes = Math.max(5, startMin + deltaMin);
@@ -1189,6 +1205,14 @@ function runSetup() {
     .withSuccessHandler(r => { toast(r.message,'ok'); reload(); })
     .withFailureHandler(() => toast('初期設定失敗','err'))
     .setup();
+}
+
+/* ======================== */
+/* スナップ切り替え         */
+/* ======================== */
+function setSnap(min) {
+  snapMin = min;
+  document.querySelectorAll('.snap-btn').forEach(b => b.classList.toggle('active', parseInt(b.textContent) === min));
 }
 
 /* ======================== */

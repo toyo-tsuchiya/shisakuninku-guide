@@ -471,12 +471,41 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
           </div>
         </div>
         <ul style="font-size:14px;color:#4b5563;line-height:2;margin-top:12px;padding-left:20px">
-          <li><strong>バーの右端をドラッグ</strong> → 時間を伸ばす・縮める（5分刻み）</li>
-          <li><strong>バーをタップ</strong> → 製品名・フェーズの編集・削除</li>
+          <li><strong>バーの右端をドラッグ（左右）</strong> → 時間を伸ばす・縮める</li>
+          <li><strong>バー本体をドラッグ（上下）</strong> → 作業の順番を入れ替える</li>
+          <li><strong>バーにカーソルを乗せる</strong> → 作業名と時間をポップアップで確認</li>
+          <li><strong>バーをタップ</strong> → 製品名・フェーズの編集・削除・複製</li>
           <li><strong>出勤ライン・退勤ラインをドラッグ</strong> → 出退勤時刻を変更</li>
         </ul>
-        <div class="tip">
-          <p>「作業合計」が「実働時間」と一致するまで調整してください。ぴったり合うと ✔ が表示されます。</p>
+
+        <div class="mock" style="margin-top:14px">
+          <div class="mock-label">スナップ切り替えボタン（タイムライン右上）</div>
+          <div style="display:flex;gap:6px;align-items:center;padding:4px 0">
+            <div style="background:#0BBDC4;color:#fff;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:800;border:2px solid #0BBDC4">5分</div>
+            <div style="background:#f5fbfb;color:#6b7a8d;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:800;border:2px solid #d6eef0">15分</div>
+            <span style="font-size:13px;color:#4b5563;margin-left:6px">ドラッグの刻みを切り替えられます</span>
+          </div>
+        </div>
+
+        <div class="mock" style="margin-top:14px">
+          <div class="mock-label">複製ボタン（バーをタップして開くモーダル）</div>
+          <div class="mock-modal" style="max-width:100%">
+            <div class="mock-modal-ttl"><div class="mock-dot"></div>作業を編集</div>
+            <div class="mock-btn-row">
+              <div class="mock-btn primary" style="flex:1">保存</div>
+              <div class="mock-btn outline">キャンセル</div>
+              <div class="mock-btn outline">複製</div>
+              <div class="mock-btn" style="background:#e53e3e;color:#fff">削除</div>
+            </div>
+          </div>
+          <div style="font-size:13px;color:#4b5563;margin-top:8px;line-height:1.8">
+            「複製」を押すと同じ内容・同じ色のバーが直後に追加されます。<br>
+            例：作業Aの途中で作業Bをして、また作業Aに戻った場合は、最初に追加した作業Aバーを複製して使えます。
+          </div>
+        </div>
+
+        <div class="tip" style="margin-top:14px">
+          <p>「作業合計」が「実働時間」と一致するまで調整してください。ぴったり合うと ✔ が表示されます。<br>各作業の時間はタイムライン下の凡例にも <strong>○○分</strong> で表示されます。</p>
         </div>
       </div>
     </div>

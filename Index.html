@@ -459,6 +459,7 @@ tr:active td{background:#f5fbfb}
     <div class="modal-actions">
       <button class="btn btn-p" onclick="saveBlock()">保存</button>
       <button class="btn btn-g" onclick="closeModal()">キャンセル</button>
+      <button class="btn btn-g" id="modal-copy" style="display:none" onclick="copyBlock()">複製</button>
       <button class="btn btn-d" id="modal-del" style="display:none" onclick="deleteBlock()">削除</button>
     </div>
   </div>
@@ -493,6 +494,7 @@ let nextId          = 1;
 let colorIdx        = 0;
 let editingId       = null;
 let dragState       = null;
+let reorderState    = null;
 let recentlyDragged = false;
 let snapMin         = 5;
 
@@ -770,8 +772,15 @@ function renderTimeline() {
     rows.appendChild(band);
   });
 
+  const displayRows = (() => {
+    if (!reorderState || !reorderState.moved) return tlRows;
+    const arr = [...tlRows];
+    const from = arr.findIndex(r => r.id === reorderState.rowId);
+    if (from !== -1) { const [item] = arr.splice(from, 1); arr.splice(reorderState.targetIdx, 0, item); }
+    return arr;
+  })();
   let curClockMin = clockIn;
-  tlRows.forEach((row, idx) => {
+  displayRows.forEach((row, idx) => {
     const topPx = idx * ROW_H + 5;
     const segs  = getWorkSegments(curClockMin, row.minutes);
 
@@ -884,19 +893,27 @@ function updateCompare() {
 /* ドラッグ操作             */
 /* ======================== */
 function onContentPointerDown(e) {
-  const el = e.target.closest('[data-action="resize"]');
-  if (!el) return;
-  e.preventDefault();
-  e.stopPropagation();
-  if (dragState) cleanupDrag();
-
-  const rowId = parseInt(el.dataset.id);
-  const row   = tlRows.find(r => r.id === rowId);
-  if (!row) return;
-
-  dragState = { rowId, startX: e.clientX, startMin: row.minutes, moved: false };
-  document.addEventListener('mousemove', onDragMove);
-  document.addEventListener('mouseup',   onDragEnd);
+  const resizeEl = e.target.closest('[data-action="resize"]');
+  if (resizeEl) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (dragState) cleanupDrag();
+    const row = tlRows.find(r => r.id === parseInt(resizeEl.dataset.id));
+    if (!row) return;
+    dragState = { rowId: row.id, startX: e.clientX, startMin: row.minutes, moved: false };
+    document.addEventListener('mousemove', onDragMove);
+    document.addEventListener('mouseup',   onDragEnd);
+    return;
+  }
+  const editEl = e.target.closest('[data-action="edit"]');
+  if (editEl && !isNaN(parseInt(editEl.dataset.id))) {
+    const rowId = parseInt(editEl.dataset.id);
+    const origIdx = tlRows.findIndex(r => r.id === rowId);
+    if (origIdx === -1) return;
+    reorderState = { rowId, origIdx, targetIdx: origIdx, startX: e.clientX, startY: e.clientY, moved: false };
+    document.addEventListener('mousemove', onReorderMove);
+    document.addEventListener('mouseup',   onReorderEnd);
+  }
 }
 
 function onDragMove(e) {
@@ -920,6 +937,39 @@ function cleanupDrag() {
   dragState = null;
   document.removeEventListener('mousemove', onDragMove);
   document.removeEventListener('mouseup',   onDragEnd);
+}
+
+function onReorderMove(e) {
+  if (!reorderState) return;
+  const dy = e.clientY - reorderState.startY;
+  const dx = e.clientX - reorderState.startX;
+  if (Math.abs(dy) > 8 || Math.abs(dx) > 8) reorderState.moved = true;
+  if (!reorderState.moved) return;
+  const rowsEl = document.getElementById('gcal-rows');
+  const rect = rowsEl.getBoundingClientRect();
+  const relY = e.clientY - rect.top - 5;
+  const newTarget = Math.max(0, Math.min(tlRows.length - 1, Math.floor(relY / ROW_H)));
+  if (newTarget !== reorderState.targetIdx) {
+    reorderState.targetIdx = newTarget;
+    renderTimeline();
+  }
+}
+function onReorderEnd() {
+  if (!reorderState) return;
+  document.removeEventListener('mousemove', onReorderMove);
+  document.removeEventListener('mouseup',   onReorderEnd);
+  if (reorderState.moved) {
+    const { rowId, targetIdx } = reorderState;
+    const origIdx = tlRows.findIndex(r => r.id === rowId);
+    if (origIdx !== targetIdx) {
+      const [item] = tlRows.splice(origIdx, 1);
+      tlRows.splice(targetIdx, 0, item);
+      renderTimeline();
+      toast('順番を変更しました', 'ok');
+    }
+    recentlyDragged = true;
+  }
+  reorderState = null;
 }
 
 /* ======================== */
@@ -980,7 +1030,8 @@ function openAddModal() {
   document.getElementById('m-stage').value    = '';
   document.getElementById('m-worktype').value = '';
   document.getElementById('m-memo').value     = '';
-  document.getElementById('modal-del').style.display = 'none';
+  document.getElementById('modal-del').style.display  = 'none';
+  document.getElementById('modal-copy').style.display = 'none';
   document.getElementById('prod-info').classList.remove('show');
   document.getElementById('modal-bg').classList.add('show');
 }
@@ -996,7 +1047,8 @@ function openEditModal(id) {
   document.getElementById('m-stage').value    = row.stageName   || '';
   document.getElementById('m-worktype').value = row.workType    || '';
   document.getElementById('m-memo').value     = row.memo        || '';
-  document.getElementById('modal-del').style.display = '';
+  document.getElementById('modal-del').style.display  = '';
+  document.getElementById('modal-copy').style.display = '';
   if (row.type !== 'other') onProdChange();
   document.getElementById('modal-bg').classList.add('show');
 }
@@ -1048,6 +1100,17 @@ function deleteBlock() {
   closeModal();
   renderTimeline();
   toast('削除しました', 'warn');
+}
+
+function copyBlock() {
+  const row = tlRows.find(r => r.id === editingId);
+  if (!row) return;
+  const newRow = { ...row, id: nextId++ };
+  const idx = tlRows.findIndex(r => r.id === editingId);
+  tlRows.splice(idx + 1, 0, newRow);
+  closeModal();
+  renderTimeline();
+  toast('複製しました', 'ok');
 }
 
 /* ======================== */

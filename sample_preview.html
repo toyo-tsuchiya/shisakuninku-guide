@@ -205,6 +205,9 @@ tr:active td{background:#f5fbfb}
 /* 細いバーの選択性改善 */
 .gcal-bar.narrow .gcal-bar-handle{width:8px;min-width:8px}
 .gcal-bar.narrow .gcal-bar-body{padding:0 10px 0 6px}
+/* 並び替えドラッグ */
+.gcal-bar.dragging{opacity:.4;pointer-events:none}
+.gcal-drop-line{position:absolute;left:4px;right:4px;height:3px;background:#0BBDC4;border-radius:2px;z-index:10;pointer-events:none;box-shadow:0 0 8px rgba(11,189,196,.5)}
 </style>
 </head>
 <body>
@@ -495,6 +498,7 @@ tr:active td{background:#f5fbfb}
     <div class="modal-actions">
       <button class="btn btn-p" onclick="saveBlock()">保存</button>
       <button class="btn btn-g" onclick="closeModal()">キャンセル</button>
+      <button class="btn btn-g" id="modal-copy" style="display:none" onclick="copyBlock()">複製</button>
       <button class="btn btn-d" id="modal-del" style="display:none" onclick="deleteBlock()">削除</button>
     </div>
   </div>
@@ -539,6 +543,7 @@ let nextId          = 1;
 let colorIdx        = 0;
 let editingId       = null;
 let dragState       = null;
+let reorderState    = null;
 let recentlyDragged = false;
 let snapMin         = 5;
 
@@ -829,6 +834,16 @@ function renderTimeline() {
   addBar.innerHTML     = `＋ 作業を追加（残り ${rem}分）`;
   rows.appendChild(addBar);
 
+  if (reorderState && reorderState.moved) {
+    rows.querySelectorAll('.gcal-bar').forEach(b => {
+      if (parseInt(b.dataset.id) === reorderState.rowId) b.classList.add('dragging');
+    });
+    const dropLine = document.createElement('div');
+    dropLine.className = 'gcal-drop-line';
+    dropLine.style.top = (reorderState.targetIdx * ROW_H + 2) + 'px';
+    rows.appendChild(dropLine);
+  }
+
   rows.removeEventListener('click',     onContentClick);
   rows.removeEventListener('mousedown', onContentPointerDown);
   rows.addEventListener('click',     onContentClick);
@@ -884,15 +899,26 @@ function updateCompare() {
 /* ドラッグ                 */
 /* ======================== */
 function onContentPointerDown(e) {
-  const el = e.target.closest('[data-action="resize"]');
-  if (!el) return;
-  e.preventDefault(); e.stopPropagation();
-  if (dragState) cleanupDrag();
-  const row = tlRows.find(r => r.id === parseInt(el.dataset.id));
-  if (!row) return;
-  dragState = { rowId:row.id, startX:e.clientX, startMin:row.minutes, moved:false };
-  document.addEventListener('mousemove', onDragMove);
-  document.addEventListener('mouseup',   onDragEnd);
+  const resizeEl = e.target.closest('[data-action="resize"]');
+  if (resizeEl) {
+    e.preventDefault(); e.stopPropagation();
+    if (dragState) cleanupDrag();
+    const row = tlRows.find(r => r.id === parseInt(resizeEl.dataset.id));
+    if (!row) return;
+    dragState = { rowId:row.id, startX:e.clientX, startMin:row.minutes, moved:false };
+    document.addEventListener('mousemove', onDragMove);
+    document.addEventListener('mouseup',   onDragEnd);
+    return;
+  }
+  const editEl = e.target.closest('[data-action="edit"]');
+  if (editEl && !isNaN(parseInt(editEl.dataset.id))) {
+    const rowId = parseInt(editEl.dataset.id);
+    const origIdx = tlRows.findIndex(r => r.id === rowId);
+    if (origIdx === -1) return;
+    reorderState = { rowId, origIdx, targetIdx: origIdx, startX: e.clientX, startY: e.clientY, moved: false };
+    document.addEventListener('mousemove', onReorderMove);
+    document.addEventListener('mouseup',   onReorderEnd);
+  }
 }
 function onDragMove(e) {
   if (!dragState) return;
@@ -910,6 +936,39 @@ function cleanupDrag() {
   dragState = null;
   document.removeEventListener('mousemove', onDragMove);
   document.removeEventListener('mouseup',   onDragEnd);
+}
+
+function onReorderMove(e) {
+  if (!reorderState) return;
+  const dy = e.clientY - reorderState.startY;
+  const dx = e.clientX - reorderState.startX;
+  if (Math.abs(dy) > 8 || Math.abs(dx) > 8) reorderState.moved = true;
+  if (!reorderState.moved) return;
+  const rowsEl = document.getElementById('gcal-rows');
+  const rect = rowsEl.getBoundingClientRect();
+  const relY = e.clientY - rect.top - 5;
+  const newTarget = Math.max(0, Math.min(tlRows.length - 1, Math.floor(relY / ROW_H)));
+  if (newTarget !== reorderState.targetIdx) {
+    reorderState.targetIdx = newTarget;
+    renderTimeline();
+  }
+}
+function onReorderEnd() {
+  if (!reorderState) return;
+  document.removeEventListener('mousemove', onReorderMove);
+  document.removeEventListener('mouseup',   onReorderEnd);
+  if (reorderState.moved) {
+    const { rowId, targetIdx } = reorderState;
+    const origIdx = tlRows.findIndex(r => r.id === rowId);
+    if (origIdx !== targetIdx) {
+      const [item] = tlRows.splice(origIdx, 1);
+      tlRows.splice(targetIdx, 0, item);
+      renderTimeline();
+      toast('順番を変更しました', 'ok');
+    }
+    recentlyDragged = true;
+  }
+  reorderState = null;
 }
 
 /* ======================== */
@@ -964,7 +1023,8 @@ function openAddModal() {
   document.getElementById('m-stage').value    = '';
   document.getElementById('m-worktype').value = '';
   document.getElementById('m-memo').value     = '';
-  document.getElementById('modal-del').style.display = 'none';
+  document.getElementById('modal-del').style.display  = 'none';
+  document.getElementById('modal-copy').style.display = 'none';
   document.getElementById('prod-info').classList.remove('show');
   document.getElementById('modal-bg').classList.add('show');
 }
@@ -980,7 +1040,8 @@ function openEditModal(id) {
   document.getElementById('m-stage').value    = row.stageName   || '';
   document.getElementById('m-worktype').value = row.workType    || '';
   document.getElementById('m-memo').value     = row.memo        || '';
-  document.getElementById('modal-del').style.display = '';
+  document.getElementById('modal-del').style.display  = '';
+  document.getElementById('modal-copy').style.display = '';
   if (row.type !== 'other') onProdChange();
   document.getElementById('modal-bg').classList.add('show');
 }
@@ -1025,6 +1086,16 @@ function deleteBlock() {
   tlRows = tlRows.filter(r=>r.id!==editingId);
   closeModal(); renderTimeline();
   toast('削除しました','warn');
+}
+
+function copyBlock() {
+  const row = tlRows.find(r => r.id === editingId);
+  if (!row) return;
+  const newRow = { ...row, id: nextId++, color: COLORS[colorIdx++ % COLORS.length] };
+  const idx = tlRows.findIndex(r => r.id === editingId);
+  tlRows.splice(idx + 1, 0, newRow);
+  closeModal(); renderTimeline();
+  toast('複製しました', 'ok');
 }
 
 function demoSubmit() {

@@ -436,3 +436,25 @@ function toDate(val) {
 function colSum(rows, col) {
   return rows.reduce((acc, r) => acc + (Number(r[col]) || 0), 0);
 }
+
+// ================================================================
+// アクセステスト（エラー切り分け用）
+// ================================================================
+function testAccess() {
+  try {
+    const ss1 = SpreadsheetApp.openById(REPORT_CONFIG.logSSId);
+    Logger.log('✓ 日報ログSS: ' + ss1.getName());
+    const sh1 = ss1.getSheetByName(REPORT_CONFIG.logSheetName);
+    Logger.log(sh1 ? '✓ シート「' + REPORT_CONFIG.logSheetName + '」あり' : '✗ シート「' + REPORT_CONFIG.logSheetName + '」なし');
+  } catch(e) {
+    Logger.log('✗ 日報ログSSエラー: ' + e.message);
+  }
+  try {
+    const ss2 = SpreadsheetApp.openById(REPORT_CONFIG.scheduleSSId);
+    Logger.log('✓ スケジュールSS: ' + ss2.getName());
+    const sh2 = ss2.getSheetByName(REPORT_CONFIG.scheduleSheetName);
+    Logger.log(sh2 ? '✓ シート「' + REPORT_CONFIG.scheduleSheetName + '」あり' : '✗ シート「' + REPORT_CONFIG.scheduleSheetName + '」なし');
+  } catch(e) {
+    Logger.log('✗ スケジュールSSエラー: ' + e.message);
+  }
+}

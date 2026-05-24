@@ -21,6 +21,7 @@ const L = {
   workType:  10, // K: 作業種別
   workMin:   11, // L: 作業時間(分)
   laborCost: 13, // N: 労務費(円)
+  planName:  16, // Q: 企画名
 };
 
 // スケジュールSSの列インデックス（0始まり）
@@ -41,7 +42,7 @@ const S = {
 function generateWeeklyReport() {
   const { startDate, endDate } = getWeekRange();
 
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       16);
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       17);
   const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  12);
   const reportSS     = getOrCreateReportSS();
 
@@ -187,7 +188,7 @@ function generateSummaryReport(reportSS, logRows, startDate, endDate) {
 }
 
 // ================================================================
-// ② 案件別レポート（製品名のみで突合）
+// ② 案件別レポート（製品名または企画名で突合）
 // ================================================================
 function generateProjectReport(reportSS, logRows, scheduleRows, startDate, endDate) {
   const today = new Date();
@@ -217,13 +218,19 @@ function generateProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
     .setFontWeight('bold')
     .setHorizontalAlignment('center');
 
-  // スケジュールSSを製品名でグループ化（同一製品の複数フェーズをまとめる）
-  const productMap = new Map();
+  // スケジュールSSを製品名でグループ化（企画名でも検索できるように）
+  const productMap    = new Map(); // 製品名 → schedule rows
+  const planToProduct = new Map(); // 企画名 → 製品名
+
   for (const sched of scheduleRows) {
     const productName = sched[S.product];
+    const planName    = sched[S.planName];
     if (!productName) continue;
     if (!productMap.has(productName)) productMap.set(productName, []);
     productMap.get(productName).push(sched);
+    if (planName && planName !== productName && !planToProduct.has(planName)) {
+      planToProduct.set(planName, productName);
+    }
   }
 
   let row = HEADER_ROW + 1;
@@ -244,11 +251,16 @@ function generateProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
     const deliveryDate = delivDates.length ? new Date(Math.min(...delivDates)) : null;
     const remainDays   = deliveryDate ? Math.ceil((deliveryDate - today) / 86400000) : '';
 
-    // 製品名のみで突合（フェーズ不問）
-    const allMatched = logRows.filter(r =>
-      r[L.product] === productName &&
-      r[L.type]    === 'サンプル製造'
-    );
+    // 製品名・スケジュール企画名・ログ企画名いずれかで突合（フェーズ不問）
+    const schedPlanNames = new Set(scheds.map(s => s[S.planName]).filter(Boolean));
+    const allMatched = logRows.filter(r => {
+      if (r[L.type] !== 'サンプル製造') return false;
+      const lp   = r[L.product];
+      const lplan = r[L.planName];
+      return lp === productName ||
+             planToProduct.get(lp) === productName ||
+             (lplan && schedPlanNames.has(lplan));
+    });
     const weekMatched = allMatched.filter(r => {
       const d = toDate(r[L.date]);
       return d && d >= startDate && d <= endDate;
@@ -388,7 +400,7 @@ function debugWeeklyReport() {
   const { startDate, endDate } = getWeekRange();
   Logger.log('=== 集計期間: ' + dFmt(startDate) + ' 〜 ' + dFmt(endDate) + ' ===');
 
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       16);
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       17);
   const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  12);
 
   const sampleLogs = logRows.filter(r => r[L.type] === 'サンプル製造');
@@ -408,13 +420,14 @@ function debugWeeklyReport() {
     });
   }
 
-  // 製品名のみで突合チェック（フェーズ不問）
-  Logger.log('--- 日報ログの製品 vs スケジュールSS 突合チェック（製品名のみ）---');
-  const scheduleProducts = new Set(scheduleRows.map(r => r[S.product]).filter(Boolean));
+  // 製品名または企画名で突合チェック
+  Logger.log('--- 日報ログの製品 vs スケジュールSS 突合チェック（製品名 or 企画名）---');
+  const scheduleProducts  = new Set(scheduleRows.map(r => r[S.product]).filter(Boolean));
+  const schedulePlanNames = new Set(scheduleRows.map(r => r[S.planName]).filter(Boolean));
   const logProducts = [...new Set(sampleLogs.map(r => r[L.product]).filter(Boolean))];
 
   logProducts.forEach(product => {
-    const hit = scheduleProducts.has(product);
+    const hit = scheduleProducts.has(product) || schedulePlanNames.has(product);
     Logger.log((hit ? '  ✓ 突合OK: ' : '  ✗ 未突合:  ') + product);
   });
 }
@@ -435,6 +448,39 @@ function toDate(val) {
 }
 function colSum(rows, col) {
   return rows.reduce((acc, r) => acc + (Number(r[col]) || 0), 0);
+}
+
+// ================================================================
+// 未突合の原因調査（スケジュールSS製品名との比較）
+// ================================================================
+function debugUnmatched() {
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,      16);
+  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 12);
+
+  const scheduleProducts  = [...new Set(scheduleRows.map(r => r[S.product]).filter(Boolean))].sort();
+  const schedulePlanNames = new Set(scheduleRows.map(r => r[S.planName]).filter(Boolean));
+  const allScheduleNames  = [...new Set([...scheduleProducts, ...schedulePlanNames])];
+  const logProducts       = [...new Set(logRows.filter(r => r[L.type] === 'サンプル製造').map(r => r[L.product]).filter(Boolean))];
+  const unmatched         = logProducts.filter(p => !scheduleProducts.includes(p) && !schedulePlanNames.has(p));
+
+  Logger.log('=== スケジュールSS 登録製品名一覧（' + scheduleProducts.length + '件）===');
+  scheduleProducts.forEach(p => Logger.log('  ' + p));
+
+  Logger.log('');
+  Logger.log('=== 未突合製品の類似候補 ===');
+  unmatched.forEach(u => {
+    Logger.log('【日報】' + u);
+    const candidates = allScheduleNames.filter(s =>
+      s.includes(u) || u.includes(s) ||
+      s.replace(/[　 （）()【】「」・\-\/]/g, '').includes(u.replace(/[　 （）()【】「」・\-\/]/g, '')) ||
+      u.replace(/[　 （）()【】「」・\-\/]/g, '').includes(s.replace(/[　 （）()【】「」・\-\/]/g, ''))
+    );
+    if (candidates.length > 0) {
+      candidates.forEach(c => Logger.log('  → 候補: ' + c));
+    } else {
+      Logger.log('  → 候補なし（スケジュールSSに未登録の可能性）');
+    }
+  });
 }
 
 // ================================================================

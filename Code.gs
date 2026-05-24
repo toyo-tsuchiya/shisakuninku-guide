@@ -76,9 +76,9 @@ function setup() {
       '出勤時刻', '退勤時刻', '休憩(分)', '実働(分)',
       '種別', '製品名', 'フェーズ', '作業種別',
       '作業時間(分)', '人工数', '労務費(円)',
-      'メモ', '提出日時'
+      'メモ', '提出日時', '企画名'
     ]);
-    header(s, 16);
+    header(s, 17);
     [2,3,8,9,13].forEach(c => s.setColumnWidth(c, 120));
     s.setColumnWidth(8, 220);
   }
@@ -95,7 +95,7 @@ function fixLogHeaders() {
     '出勤時刻', '退勤時刻', '休憩(分)', '実働(分)',
     '種別', '製品名', 'フェーズ', '作業種別',
     '作業時間(分)', '人工数', '労務費(円)',
-    'メモ', '提出日時'
+    'メモ', '提出日時', '企画名'
   ];
   s.getRange(1, 1, 1, headers.length).setValues([headers]);
   header(s, headers.length);
@@ -161,11 +161,20 @@ function submitReport(craftsmanName, dateStr, clockIn, clockOut, breakMin, rows,
   const sheet = ss.getSheetByName(SHEETS.LOGS);
   const submittedAt = fmt(new Date(), 'yyyy/MM/dd HH:mm:ss');
 
+  // 製品名 → 企画名 のルックアップ（スケジュールマスターから）
+  const schedSheet = ss.getSheetByName(SHEETS.SCHEDULES);
+  const productToPlan = new Map();
+  if (schedSheet && schedSheet.getLastRow() > 1) {
+    schedSheet.getRange(2, 1, schedSheet.getLastRow()-1, 5).getValues()
+      .forEach(r => { if (r[1]) productToPlan.set(r[1], r[4]||''); });
+  }
+
   rows.forEach(row => {
     const min   = Number(row.minutes) || 0;
     const ninku = parseFloat((min / MINUTES_PER_NINKU).toFixed(4));
     const cost  = Math.round(min * RATE_PER_MINUTE);
     const isSample = (row.type !== 'other');
+    const planName = isSample ? (productToPlan.get(row.productName) || '') : '';
     sheet.appendRow([
       Utilities.getUuid(),
       dateStr, craftsmanName,
@@ -176,7 +185,8 @@ function submitReport(craftsmanName, dateStr, clockIn, clockOut, breakMin, rows,
       isSample ? ''                    : (row.workType||''),
       min, ninku, cost,
       row.memo || memo || '',
-      submittedAt
+      submittedAt,
+      planName
     ]);
   });
 

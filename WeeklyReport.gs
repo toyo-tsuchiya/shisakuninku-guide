@@ -267,6 +267,7 @@ function generateMonthlyReportForMonth(year, month) {
   appendToMonthlyTrend(reportSS, logRows, startDate, endDate, label);
   appendToBrandReport(reportSS, logRows, scheduleRows, startDate, endDate, label);
   appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDate, label);
+  appendToWorkerDetailReport(reportSS, logRows, scheduleRows, startDate, endDate, label);
 
   Logger.log(label + ' 月次レポート完了: ' + reportSS.getUrl());
 }
@@ -406,7 +407,9 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
     '担当者（月内）', '担当者（累計）',
     '実作業開始', '実作業最終', '作業日数',
     '計画開始', '計画完了', 'ステータス', 'フェーズ内訳（月内）',
+    '累計_モック(h)', '累計_1st(h)', '累計_2nd(h)', '累計_3rd(h)', '累計_その他(h)',
   ];
+  const PHASE_KEYS = ['モック', '1st', '2nd', '3rd'];
   const sheet = getOrInitSheet(reportSS, '⑥企画別', HEADERS, '#A142F4');
 
   if (labelExists(sheet, label)) {
@@ -489,6 +492,18 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
         .map(([p, m]) => p + ':' + +(m / 60).toFixed(1) + 'h')
         .join(' / ');
 
+      // フェーズ別累計（全期間）
+      const allPhaseMin = new Map();
+      for (const r of allLogs) {
+        const ph  = r[L.phase] || '';
+        const key = PHASE_KEYS.includes(ph) ? ph : 'その他';
+        allPhaseMin.set(key, (allPhaseMin.get(key) || 0) + (Number(r[L.workMin]) || 0));
+      }
+      const phaseCols = [...PHASE_KEYS, 'その他'].map(ph => {
+        const m = allPhaseMin.get(ph) || 0;
+        return m > 0 ? +(m / 60).toFixed(1) : '';
+      });
+
       return [
         label, planName, brand, products,
         monthMin  > 0 ? +(monthMin  / 60).toFixed(1) : '', monthCost  > 0 ? monthCost  : '',
@@ -497,6 +512,7 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
         firstDate ? dFmt(firstDate) : '', lastDate ? dFmt(lastDate) : '', spanDays,
         planStart ? dFmt(planStart) : '', planEnd  ? dFmt(planEnd)  : '',
         statuses, phaseStr,
+        ...phaseCols,
       ];
     });
 
@@ -510,6 +526,85 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
   sheet.setFrozenRows(1);
   sheet.autoResizeColumns(1, HEADERS.length);
   Logger.log('⑥企画別 追記完了（' + newRows.length + '件 / ' + label + '）');
+}
+
+// ================================================================
+// ⑦ 職人別ブランド×企画（月次追記型・月内 + 累計）「誰がどの事業・企画に」
+// ================================================================
+function appendToWorkerDetailReport(reportSS, logRows, scheduleRows, startDate, endDate, label) {
+  const HEADERS = ['年月', '職人名', 'ブランド', '企画名', '月内工数(h)', '月内労務費(円)', '累計工数(h)', '累計労務費(円)'];
+  const sheet = getOrInitSheet(reportSS, '⑦職人別', HEADERS, '#FF7043');
+
+  if (labelExists(sheet, label)) {
+    Logger.log('⑦職人別: ' + label + ' 既存 → スキップ');
+    return;
+  }
+
+  const productToBrand = new Map();
+  const planToBrand    = new Map();
+  const productPlanMap = new Map();
+  for (const s of scheduleRows) {
+    const brand = s[S.brand]    || '';
+    const plan  = s[S.planName] || '';
+    const prod  = s[S.product]  || '';
+    if (prod)         productToBrand.set(prod, brand);
+    if (plan)         planToBrand.set(plan, brand);
+    if (prod && plan) productPlanMap.set(prod, plan);
+  }
+
+  const allSampleLogs   = logRows.filter(r => r[L.type] === 'サンプル製造');
+  const monthSampleLogs = allSampleLogs.filter(r => { const d = toDate(r[L.date]); return d && d >= startDate && d <= endDate; });
+
+  const getPlan  = r => r[L.planName] || productPlanMap.get(r[L.product]) || r[L.product] || '';
+  const getBrand = r => productToBrand.get(r[L.product]) || planToBrand.get(r[L.planName]) || '未紐付け';
+
+  const allMap = new Map();
+  for (const r of allSampleLogs) {
+    const worker = r[L.worker] || '';
+    const plan   = getPlan(r);
+    if (!worker || !plan) continue;
+    const key = worker + '\t' + plan;
+    if (!allMap.has(key)) allMap.set(key, { worker, plan, brand: getBrand(r), workMin: 0, cost: 0 });
+    const e = allMap.get(key);
+    e.workMin += Number(r[L.workMin])   || 0;
+    e.cost    += Number(r[L.laborCost]) || 0;
+  }
+
+  const monthMap = new Map();
+  for (const r of monthSampleLogs) {
+    const worker = r[L.worker] || '';
+    const plan   = getPlan(r);
+    if (!worker || !plan) continue;
+    const key = worker + '\t' + plan;
+    if (!monthMap.has(key)) monthMap.set(key, { workMin: 0, cost: 0 });
+    const e = monthMap.get(key);
+    e.workMin += Number(r[L.workMin])   || 0;
+    e.cost    += Number(r[L.laborCost]) || 0;
+  }
+
+  const newRows = [...monthMap.keys()]
+    .sort((a, b) => a.localeCompare(b, 'ja'))
+    .map(key => {
+      const all   = allMap.get(key) || { workMin: 0, cost: 0 };
+      const month = monthMap.get(key);
+      const info  = allMap.get(key) || { worker: key.split('\t')[0], plan: key.split('\t')[1], brand: '' };
+      return [
+        label, info.worker, info.brand, info.plan,
+        +(month.workMin / 60).toFixed(1), month.cost,
+        +(all.workMin   / 60).toFixed(1), all.cost,
+      ];
+    });
+
+  if (newRows.length > 0) {
+    const insertRow = sheet.getLastRow() + 1;
+    sheet.getRange(insertRow, 1, newRows.length, HEADERS.length).setValues(newRows);
+    sheet.getRange(insertRow, 6, newRows.length, 1).setNumberFormat('#,##0');
+    sheet.getRange(insertRow, 8, newRows.length, 1).setNumberFormat('#,##0');
+  }
+
+  sheet.setFrozenRows(1);
+  sheet.autoResizeColumns(1, HEADERS.length);
+  Logger.log('⑦職人別 追記完了（' + newRows.length + '件 / ' + label + '）');
 }
 
 // ================================================================

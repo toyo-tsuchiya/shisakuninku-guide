@@ -402,17 +402,19 @@ function appendToBrandReport(reportSS, logRows, scheduleRows, startDate, endDate
 // ================================================================
 function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDate, label) {
   const HEADERS = [
+    'ステータス',
     '年月', '企画名', 'ブランド', '製品名',
     '月内工数(h)', '月内労務費(円)', '累計工数(h)', '累計労務費(円)',
     '担当者（月内）', '担当者（累計）',
     '実作業開始', '実作業最終', '作業日数',
-    '計画開始', '計画完了', 'ステータス', 'フェーズ内訳（月内）',
+    '計画開始', '計画完了',
+    '月内_モック(h)', '月内_1st(h)', '月内_2nd(h)', '月内_3rd(h)', '月内_その他(h)',
     '累計_モック(h)', '累計_1st(h)', '累計_2nd(h)', '累計_3rd(h)', '累計_その他(h)',
   ];
   const PHASE_KEYS = ['モック', '1st', '2nd', '3rd'];
   const sheet = getOrInitSheet(reportSS, '⑥企画別', HEADERS, '#A142F4');
 
-  if (labelExists(sheet, label)) {
+  if (labelExists(sheet, label, 2)) {
     Logger.log('⑥企画別: ' + label + ' 既存 → スキップ');
     return;
   }
@@ -481,16 +483,17 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
       const lastDate  = allDates.length ? new Date(Math.max(...allDates)) : null;
       const spanDays  = (firstDate && lastDate) ? Math.ceil((lastDate - firstDate) / 86400000) + 1 : '';
 
-      // フェーズ内訳（月内のみ）
-      const phaseMin = new Map();
+      // フェーズ別（月内）
+      const monthPhaseMin = new Map();
       for (const r of monthLogs) {
-        const ph = r[L.phase] || 'その他';
-        phaseMin.set(ph, (phaseMin.get(ph) || 0) + (Number(r[L.workMin]) || 0));
+        const ph  = r[L.phase] || '';
+        const key = PHASE_KEYS.includes(ph) ? ph : 'その他';
+        monthPhaseMin.set(key, (monthPhaseMin.get(key) || 0) + (Number(r[L.workMin]) || 0));
       }
-      const phaseStr = [...phaseMin.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .map(([p, m]) => p + ':' + +(m / 60).toFixed(1) + 'h')
-        .join(' / ');
+      const monthPhaseCols = [...PHASE_KEYS, 'その他'].map(ph => {
+        const m = monthPhaseMin.get(ph) || 0;
+        return m > 0 ? +(m / 60).toFixed(1) : '';
+      });
 
       // フェーズ別累計（全期間）
       const allPhaseMin = new Map();
@@ -505,13 +508,14 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
       });
 
       return [
+        statuses,
         label, planName, brand, products,
         monthMin  > 0 ? +(monthMin  / 60).toFixed(1) : '', monthCost  > 0 ? monthCost  : '',
         allMin    > 0 ? +(allMin    / 60).toFixed(1) : '', allCost    > 0 ? allCost    : '',
         monthWorkers, allWorkers,
         firstDate ? dFmt(firstDate) : '', lastDate ? dFmt(lastDate) : '', spanDays,
         planStart ? dFmt(planStart) : '', planEnd  ? dFmt(planEnd)  : '',
-        statuses, phaseStr,
+        ...monthPhaseCols,
         ...phaseCols,
       ];
     });
@@ -519,12 +523,13 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
   if (newRows.length > 0) {
     const insertRow = sheet.getLastRow() + 1;
     sheet.getRange(insertRow, 1, newRows.length, HEADERS.length).setValues(newRows);
-    sheet.getRange(insertRow, 6, newRows.length, 1).setNumberFormat('#,##0');
-    sheet.getRange(insertRow, 8, newRows.length, 1).setNumberFormat('#,##0');
+    sheet.getRange(insertRow, 7, newRows.length, 1).setNumberFormat('#,##0');
+    sheet.getRange(insertRow, 9, newRows.length, 1).setNumberFormat('#,##0');
   }
 
   sheet.setFrozenRows(1);
   sheet.autoResizeColumns(1, HEADERS.length);
+  sheet.hideColumns(1, 1);
   Logger.log('⑥企画別 追記完了（' + newRows.length + '件 / ' + label + '）');
 }
 
@@ -723,10 +728,10 @@ function dateRangeExists(sheet, startDate, endDate) {
   });
 }
 
-function labelExists(sheet, label) {
+function labelExists(sheet, label, col) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return false;
-  return sheet.getRange(2, 1, lastRow - 1, 1).getValues().some(r => String(r[0]) === label);
+  return sheet.getRange(2, col || 1, lastRow - 1, 1).getValues().some(r => String(r[0]) === label);
 }
 
 // ================================================================

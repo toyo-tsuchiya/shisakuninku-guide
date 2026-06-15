@@ -68,8 +68,15 @@ function getWeekRange() {
 // ① 週次推移（追記型）
 // ================================================================
 function appendToWeeklyTrend(reportSS, logRows, startDate, endDate) {
-  const HEADERS = ['集計開始', '集計終了', '稼働人数', '稼働日数', '実働(h)', '製造(h)', '間接(h)', '製造比率(%)', '製品数', '労務費(円)'];
+  const HEADERS = ['集計開始', '集計終了', '稼働人数', '稼働日数', 'フルニンク(人工)', '実績ニンク(人工)', '実働(h)', '製造(h)', '間接(h)', '製造比率(%)', '製品数', '労務費(円)'];
   const sheet = getOrInitSheet(reportSS, '①週次推移', HEADERS, '#4285F4');
+
+  // 既存シートに列が追加された場合はヘッダーを更新する
+  if (sheet.getLastColumn() < HEADERS.length) {
+    sheet.getRange(1, 1, 1, HEADERS.length)
+      .setValues([HEADERS])
+      .setBackground('#37474F').setFontColor('#FFFFFF').setFontWeight('bold').setHorizontalAlignment('center');
+  }
 
   if (dateRangeExists(sheet, startDate, endDate)) {
     Logger.log('①週次推移: ' + dFmt(startDate) + ' 既存 → スキップ');
@@ -94,16 +101,21 @@ function appendToWeeklyTrend(reportSS, logRows, startDate, endDate) {
   const productCount   = new Set(sampleLogs.map(r => r[L.product]).filter(Boolean)).size;
   const mfgRatio       = totalActualMin > 0 ? Math.round(totalMfgMin / totalActualMin * 100) : 0;
 
+  const businessDays = countBusinessDays(startDate, endDate);
+  const fullNinku    = businessDays * workerCount;
+  const actualNinku  = actualByKey.size;
+
   sheet.appendRow([
     dFmt(startDate), dFmt(endDate),
     workerCount, workDays,
+    fullNinku, actualNinku,
     +(totalActualMin / 60).toFixed(1),
     +(totalMfgMin    / 60).toFixed(1),
     +(totalOtherMin  / 60).toFixed(1),
     mfgRatio, productCount, totalCost,
   ]);
 
-  sheet.getRange(sheet.getLastRow(), 10).setNumberFormat('#,##0');
+  sheet.getRange(sheet.getLastRow(), 12).setNumberFormat('#,##0');
 }
 
 // ================================================================
@@ -268,6 +280,7 @@ function generateMonthlyReportForMonth(year, month) {
   appendToBrandReport(reportSS, logRows, scheduleRows, startDate, endDate, label);
   appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDate, label);
   appendToWorkerDetailReport(reportSS, logRows, scheduleRows, startDate, endDate, label);
+  appendToWorkerMonthly(reportSS, logRows, startDate, endDate, label);
 
   Logger.log(label + ' 月次レポート完了: ' + reportSS.getUrl());
 }
@@ -613,6 +626,61 @@ function appendToWorkerDetailReport(reportSS, logRows, scheduleRows, startDate, 
 }
 
 // ================================================================
+// ⑧ 職人別月次（月次追記型）②職人別週次の月次版
+// ================================================================
+function appendToWorkerMonthly(reportSS, logRows, startDate, endDate, label) {
+  const HEADERS = ['年月', '職人名', '稼働日数', '実働(h)', '製造(h)', '間接(h)', '製造比率(%)', '労務費(円)'];
+  const sheet = getOrInitSheet(reportSS, '⑧職人別月次', HEADERS, '#4DD0E1');
+
+  if (labelExists(sheet, label)) {
+    Logger.log('⑧職人別月次: ' + label + ' 既存 → スキップ');
+    return;
+  }
+
+  const monthLogs = logRows.filter(r => { const d = toDate(r[L.date]); return d && d >= startDate && d <= endDate; });
+
+  const workerMap = new Map();
+  for (const r of monthLogs) {
+    const w = r[L.worker];
+    if (!w) continue;
+    if (!workerMap.has(w)) workerMap.set(w, []);
+    workerMap.get(w).push(r);
+  }
+
+  const newRows = [...workerMap.keys()]
+    .sort((a, b) => a.localeCompare(b, 'ja'))
+    .map(worker => {
+      const logs = workerMap.get(worker);
+      const workDays = new Set(logs.map(r => dFmt(toDate(r[L.date])))).size;
+      const actualByDate = new Map();
+      for (const r of logs) {
+        const k = dFmt(toDate(r[L.date]));
+        if (!actualByDate.has(k)) actualByDate.set(k, Number(r[L.actualMin]) || 0);
+      }
+      const actualMin = [...actualByDate.values()].reduce((a, b) => a + b, 0);
+      const mfgMin    = colSum(logs.filter(r => r[L.type] === 'サンプル製造'), L.workMin);
+      const indMin    = colSum(logs.filter(r => r[L.type] !== 'サンプル製造'), L.workMin);
+      const laborCost = colSum(logs, L.laborCost);
+      const mfgRatio  = actualMin > 0 ? Math.round(mfgMin / actualMin * 100) : 0;
+      return [
+        label, worker, workDays,
+        +(actualMin / 60).toFixed(1), +(mfgMin / 60).toFixed(1), +(indMin / 60).toFixed(1),
+        mfgRatio, laborCost,
+      ];
+    });
+
+  if (newRows.length > 0) {
+    const insertRow = sheet.getLastRow() + 1;
+    sheet.getRange(insertRow, 1, newRows.length, HEADERS.length).setValues(newRows);
+    sheet.getRange(insertRow, 8, newRows.length, 1).setNumberFormat('#,##0');
+  }
+
+  sheet.setFrozenRows(1);
+  sheet.autoResizeColumns(1, HEADERS.length);
+  Logger.log('⑧職人別月次 追記完了（' + newRows.length + '件 / ' + label + '）');
+}
+
+// ================================================================
 // バックフィル：指定開始日から7日ごとに週次レポートをまとめて生成
 // ================================================================
 function generateWeeklyReportBackfill() {
@@ -833,6 +901,19 @@ function toDate(val) {
 function colSum(rows, col) {
   return rows.reduce((acc, r) => acc + (Number(r[col]) || 0), 0);
 }
+function countBusinessDays(startDate, endDate) {
+  let count = 0;
+  const d = new Date(startDate);
+  d.setHours(0, 0, 0, 0);
+  const end = new Date(endDate);
+  end.setHours(23, 59, 59, 999);
+  while (d <= end) {
+    const dow = d.getDay();
+    if (dow !== 0 && dow !== 6) count++;
+    d.setDate(d.getDate() + 1);
+  }
+  return count;
+}
 
 // ================================================================
 // 使い方ガイド Google ドキュメント作成（1回のみ実行）
@@ -864,6 +945,8 @@ function createUsageGuideDoc() {
   addText('試作課の工数・労務費データを集計した週次・月次レポートの読み方と活用方法です。');
   body.appendParagraph('');
 
+  // ===== シート別の活用ガイド =====
+
   addHeading('① 週次推移（青タブ）', H2);
   addText('試作課全体の1週間まとめ。実働時間・製造比率・労務費が1行/週で蓄積される。');
   addTable([
@@ -871,6 +954,8 @@ function createUsageGuideDoc() {
     ['製造比率(%)', '70%以上：緑、50%以上：橙、50%未満：赤で色分け。低い週は間接業務が多かった週'],
     ['労務費(円)', '月次予算との比較に使える'],
     ['稼働人数', '欠勤・休暇が多かった週の確認'],
+    ['フルニンク(人工)', '営業日数×稼働人数。期間中フル稼働した場合の最大人工数'],
+    ['実績ニンク(人工)', '実際に日報を提出した職人×日のユニーク数。フルニンクとの差が欠勤・休暇分'],
   ]);
 
   addHeading('② 職人別週次（水色タブ）', H2);
@@ -926,6 +1011,17 @@ function createUsageGuideDoc() {
     ['職人名でフィルタ', '「この職人は今月どの仕事をしていたか」がわかる'],
   ]);
 
+  addHeading('⑧ 職人別月次（青緑タブ）', H2);
+  addText('職人ごとの月まとめ（1行/職人×月）。②職人別週次の月次集計版。月次報告での職人別実績に使える。');
+  addTable([
+    ['見るポイント', '活用例'],
+    ['稼働日数・実働(h)', '職人ごとの月間稼働量を把握。欠勤・有休が多い月の確認'],
+    ['製造比率(%)', '職人ごとに製造vs間接の比率を月単位で比較'],
+    ['労務費(円)', '職人ごとの月間人件費'],
+  ]);
+
+  // ===== 今後の活用 =====
+
   addHeading('今後の活用（データが3ヶ月以上蓄積されてから）', H2);
   addTable([
     ['やりたいこと', '使うシート', '方法'],
@@ -933,18 +1029,21 @@ function createUsageGuideDoc() {
     ['特定ブランドへの年間リソース配分', '⑤ブランド別', 'ブランド名でフィルタして累計工数を縦に追う'],
     ['職人ごとの得意ブランド・企画の傾向', '⑦職人別', '職人名でフィルタして累計工数が多い企画を見る'],
     ['月ごとの繁忙期・閑散期の把握', '④月次推移', '稼働日数・製造(h)の推移をグラフ化'],
+    ['職人ごとの月間稼働推移', '⑧職人別月次', '職人名でフィルタして実働・製造比率を縦に追う'],
   ]);
+
+  // ===== 日報入力ミスの影響と調べ方 =====
 
   addHeading('日報入力ミスの影響と調べ方', H2);
   addHeading('よくある入力ミスとその影響', H3);
   addTable([
     ['入力ミス', '影響するシート', '具体的な症状'],
     ['製品名の表記ゆれ（スペース・全角半角など）', '③⑤⑥⑦', 'その製品の工数が「未紐付け」に入る。③案件進捗の累計工数が0のまま'],
-    ['種別（サンプル製造/その他）の選び間違い', '①②④', '製造比率が実態と合わなくなる'],
+    ['種別（サンプル製造/その他）の選び間違い', '①②④⑧', '製造比率が実態と合わなくなる'],
     ['フェーズの入力ミス', '⑥', 'フェーズ別累計の数字が実態と合わなくなる'],
     ['作業時間の入力ミス（分単位）', '全シート', '工数・労務費がすべてズレる'],
     ['企画名が空欄', '⑥⑦', 'その企画への工数が集計されない'],
-    ['職人名の表記ゆれ', '②⑦', '同一人物が別人として2行で集計される'],
+    ['職人名の表記ゆれ', '②⑦⑧', '同一人物が別人として2行で集計される'],
   ]);
 
   addHeading('調べ方（GASエディタから実行）', H3);
@@ -957,8 +1056,160 @@ function createUsageGuideDoc() {
 
   addHeading('入力ミスを見つけたら', H3);
   addText('1. 日報ログSSの該当行を直接修正する');
-  addText('2. 集計レポートSSの該当月シート（④⑤⑥⑦）の該当月行を削除する');
+  addText('2. 集計レポートSSの該当月シート（④⑤⑥⑦⑧）の該当月行を削除する');
   addText('3. GASエディタで generateMonthlyReport を再実行して再集計する');
+
+  // ===== 各シートの列定義と計算式 =====
+
+  addHeading('各シートの列定義と計算式', H2);
+  addText('各シートの全列が「何を・どう計算しているか」を記載します。');
+  body.appendParagraph('');
+
+  addHeading('共通の前提', H3);
+  addTable([
+    ['用語', '定義'],
+    ['実働(分)', '出勤〜退勤の時間 − 休憩時間。職人・日付でユニークに取得（同じ人が同じ日に複数行提出しても1回分のみ加算）'],
+    ['作業時間(分)', '各作業行に入力した分数。1日に複数行入力した場合は合計'],
+    ['製造(分)', '種別＝「サンプル製造」の作業時間(分)の合計'],
+    ['間接(分)', '種別＝「その他」の作業時間(分)の合計（社内MTG・事務作業など）'],
+    ['労務費(円)', '作業時間(分) × 42円。提出時に自動計算してログに保存済み'],
+    ['突合', '日報の製品名とスケジュールSSの製品名・企画名を照合すること'],
+  ]);
+
+  addHeading('① 週次推移', H3);
+  addText('集計期間：毎週木曜の自動実行日から7日前〜前日（例：6/12実行 → 6/5〜6/11）');
+  addTable([
+    ['列名', '計算内容'],
+    ['集計開始', '集計期間の開始日'],
+    ['集計終了', '集計期間の終了日'],
+    ['稼働人数', '期間内に1件でも日報を提出した職人の人数'],
+    ['稼働日数', '期間内に誰かが日報を提出した日数（ユニーク日付の数）'],
+    ['フルニンク(人工)', '集計期間内の営業日数（土日除く）× 稼働人数。フル稼働した場合の最大人工数'],
+    ['実績ニンク(人工)', '実際に日報を提出した職人×日のユニーク組み合わせ数。フルニンクとの差が欠勤・休暇分'],
+    ['実働(h)', '全職人の実働(分)合計 ÷ 60（職人×日付で重複排除済み）'],
+    ['製造(h)', '全製造作業の作業時間(分)合計 ÷ 60'],
+    ['間接(h)', '全間接作業の作業時間(分)合計 ÷ 60'],
+    ['製造比率(%)', '製造(分) ÷ 実働(分) × 100（四捨五入）※70%以上：緑、50%以上：橙、50%未満：赤'],
+    ['製品数', '期間内に登場したユニークな製品名の数（サンプル製造のみ）'],
+    ['労務費(円)', '期間内の全行の労務費合計'],
+  ]);
+
+  addHeading('② 職人別週次', H3);
+  addText('①と同じ集計期間で、職人ごとに1行出力。');
+  addTable([
+    ['列名', '計算内容'],
+    ['集計開始・終了', '①と同じ'],
+    ['職人名', '日報に記入された職人名'],
+    ['稼働日数', 'その職人が期間内に日報を提出した日数'],
+    ['実働(h)', 'その職人の実働(分)合計 ÷ 60（日付で重複排除済み）'],
+    ['製造(h)', 'その職人の製造作業時間(分)合計 ÷ 60'],
+    ['間接(h)', 'その職人の間接作業時間(分)合計 ÷ 60'],
+    ['製造比率(%)', 'その職人の製造(分) ÷ 実働(分) × 100'],
+    ['労務費(円)', 'その職人の期間内の労務費合計'],
+  ]);
+
+  addHeading('③ 案件進捗', H3);
+  addText('毎週上書き。スケジュールSSに登録されている全製品が対象。');
+  addTable([
+    ['列名', '計算内容'],
+    ['製品名', 'スケジュールSSから取得'],
+    ['フェーズ', 'スケジュールSSの「サンプルフェーズ」列から取得（複数あれば「・」区切り）'],
+    ['企画名', 'スケジュールSSから取得'],
+    ['ブランド', 'スケジュールSSから取得'],
+    ['納品希望日', 'スケジュールSSから取得（複数行ある場合は最も早い日付）'],
+    ['残日数', '納品希望日 − 今日（マイナスは納期超過）※3日以内：赤、7日以内：橙'],
+    ['計画開始', 'スケジュールSSの試作開始日（複数行の最も早い日付）'],
+    ['計画完了', 'スケジュールSSの試作完了日（複数行の最も遅い日付）'],
+    ['累計工数(h)', '日報ログで同製品・同企画に紐づいた全期間の作業時間(分)合計 ÷ 60'],
+    ['累計労務費(円)', '同上の労務費合計'],
+    ['担当者（全期間）', '累計で関わった職人名（「、」区切り）'],
+    ['ステータス', 'スケジュールSSのステータス列から取得'],
+  ]);
+
+  addHeading('④ 月次推移', H3);
+  addText('対象月の1日〜末日を集計（①の月次版）。');
+  addTable([
+    ['列名', '計算内容'],
+    ['年月', '例：「2026年05月」'],
+    ['稼働人数', '月内に日報を提出したユニーク職人数'],
+    ['稼働日数', '月内に誰かが日報を提出したユニーク日付の数'],
+    ['実働(h)', '全職人の実働(分)合計 ÷ 60（職人×日付で重複排除済み）'],
+    ['製造(h)', '製造作業時間(分)合計 ÷ 60'],
+    ['間接(h)', '間接作業時間(分)合計 ÷ 60'],
+    ['製造比率(%)', '製造(分) ÷ 実働(分) × 100 ※色分けあり'],
+    ['製品数', '月内に登場したユニーク製品名の数'],
+    ['企画数', '月内に登場したユニーク企画名の数'],
+    ['平均製品工数(h)', '月内の製造作業時間合計 ÷ 製品数 ÷ 60'],
+    ['労務費(円)', '月内の全労務費合計'],
+  ]);
+
+  addHeading('⑤ ブランド別', H3);
+  addText('月次追記。月内に動きがあったブランドのみ追記（当月に1件も日報がないブランドは出ない）。');
+  addTable([
+    ['列名', '計算内容'],
+    ['年月', '例：「2026年05月」'],
+    ['ブランド', 'スケジュールSSのブランド名'],
+    ['企画数', 'そのブランドに紐づく企画数（累計・全期間のユニーク企画名数）'],
+    ['製品数', 'そのブランドに紐づく製品数（累計・全期間のユニーク製品名数）'],
+    ['月内工数(h)', '当月のそのブランドへの作業時間(分)合計 ÷ 60'],
+    ['月内労務費(円)', '当月の労務費合計'],
+    ['累計工数(h)', '全期間のそのブランドへの作業時間(分)合計 ÷ 60'],
+    ['累計労務費(円)', '全期間の労務費合計'],
+    ['担当者（全期間）', '累計でそのブランドに関わった職人名（「、」区切り）'],
+  ]);
+
+  addHeading('⑥ 企画別', H3);
+  addText('月次追記。月内に動きがあった企画のみ追記。A列（ステータス）は非表示。');
+  addTable([
+    ['列名', '計算内容'],
+    ['ステータス', 'スケジュールSSのステータス（A列・非表示）'],
+    ['年月', '例：「2026年05月」'],
+    ['企画名', '企画名（スケジュールSSから取得、なければ製品名）'],
+    ['ブランド', 'スケジュールSSから逆引き'],
+    ['製品名', 'その企画に紐づいた全製品名（「、」区切り、全期間）'],
+    ['月内工数(h)', '当月の作業時間(分)合計 ÷ 60'],
+    ['月内労務費(円)', '当月の労務費合計'],
+    ['累計工数(h)', '全期間の作業時間(分)合計 ÷ 60'],
+    ['累計労務費(円)', '全期間の労務費合計'],
+    ['担当者（月内）', '当月に関わった職人名'],
+    ['担当者（累計）', '全期間に関わった職人名'],
+    ['実作業開始', '全期間で最も古い日報の日付'],
+    ['実作業最終', '全期間で最も新しい日報の日付'],
+    ['作業日数', '実作業最終 − 実作業開始 + 1（カレンダー日数）'],
+    ['計画開始', 'スケジュールSSの試作開始日'],
+    ['計画完了', 'スケジュールSSの試作完了日'],
+    ['月内_モック(h)', '当月・フェーズ＝モックの作業時間(分)合計 ÷ 60'],
+    ['月内_1st〜その他(h)', '同上（1st / 2nd / 3rd / その他）各フェーズ列'],
+    ['累計_モック〜その他(h)', '同上の全期間版（5列）'],
+  ]);
+
+  addHeading('⑦ 職人別', H3);
+  addText('月次追記。職人×企画の組み合わせで1行。当月に動きがあったもののみ追記。');
+  addTable([
+    ['列名', '計算内容'],
+    ['年月', '例：「2026年05月」'],
+    ['職人名', '日報に記入された職人名'],
+    ['ブランド', 'スケジュールSSから逆引き（製品名 or 企画名で突合）'],
+    ['企画名', '企画名（未突合の場合は製品名）'],
+    ['月内工数(h)', '当月のその職人×企画の作業時間(分)合計 ÷ 60'],
+    ['月内労務費(円)', '当月の労務費合計'],
+    ['累計工数(h)', '全期間のその職人×企画の作業時間(分)合計 ÷ 60'],
+    ['累計労務費(円)', '全期間の労務費合計'],
+  ]);
+
+  addHeading('⑧ 職人別月次', H3);
+  addText('月次追記。職人ごとに1行（月内に日報を提出した職人のみ）。');
+  addTable([
+    ['列名', '計算内容'],
+    ['年月', '例：「2026年05月」'],
+    ['職人名', '日報に記入された職人名'],
+    ['稼働日数', 'その職人が月内に日報を提出した日数'],
+    ['実働(h)', 'その職人の実働(分)合計 ÷ 60（日付で重複排除済み）'],
+    ['製造(h)', 'その職人の製造作業時間(分)合計 ÷ 60'],
+    ['間接(h)', 'その職人の間接作業時間(分)合計 ÷ 60'],
+    ['製造比率(%)', 'その職人の製造(分) ÷ 実働(分) × 100'],
+    ['労務費(円)', 'その職人の月内の労務費合計'],
+  ]);
 
   doc.saveAndClose();
   Logger.log('✓ ガイドドキュメント作成完了: ' + doc.getUrl());

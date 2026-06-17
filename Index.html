@@ -38,6 +38,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f0f
 label{display:block;font-size:13px;font-weight:800;color:#4a5568;letter-spacing:.05em;margin-bottom:7px;text-transform:uppercase}
 select,input{width:100%;padding:14px 13px;border:2px solid #ccdcde;border-radius:12px;font-size:17px;color:#1a202c;background:#f5fbfb;font-family:inherit;transition:border .2s,box-shadow .2s,background .2s;-webkit-appearance:none;appearance:none}
 select:focus,input:focus{outline:none;border-color:#0BBDC4;box-shadow:0 0 0 4px rgba(11,189,196,.12);background:#fff}
+input[type="checkbox"]{width:auto;padding:0;border:none;border-radius:0;background:none;box-shadow:none;-webkit-appearance:checkbox;appearance:checkbox}
 select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7a8d' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:36px}
 
 /* 実働時間表示 */
@@ -375,8 +376,11 @@ tr:active td{background:#f5fbfb}
       <div class="row" style="align-items:flex-end">
         <div class="fg"><label>サンプル製品名称</label>
           <input type="text" id="p-name" placeholder="例: バックパック 組み立て">
+          <input type="hidden" id="p-edit-orig">
         </div>
-        <button class="btn btn-mono btn-sm" onclick="addSchedule()">追加</button>
+        <button class="btn btn-mono btn-sm" id="p-add-btn" onclick="addSchedule()">追加</button>
+        <button class="btn btn-p btn-sm" id="p-save-btn" style="display:none" onclick="saveScheduleEdit()">更新</button>
+        <button class="btn btn-g btn-sm" id="p-cancel-btn" style="display:none" onclick="cancelScheduleEdit()">キャンセル</button>
       </div>
       <div id="list-p" style="margin-top:32px" class="ld">読み込み中...</div>
     </div>
@@ -396,18 +400,42 @@ tr:active td{background:#f5fbfb}
   </div>
 
   <div class="card">
-    <div class="card-ttl acc-ttl closed" onclick="toggleAcc(this)">🔢 ステージ管理</div>
+    <div class="card-ttl acc-ttl closed" onclick="toggleAcc(this)">🔢 フェーズ大分類管理</div>
     <div class="acc-body closed">
       <p style="font-size:14px;color:#9aa5b4;margin-bottom:14px">
-        初期値: モック / 1st / 2nd / 最終（展示会）/ 色増し前修正 / 試験体 / ショー用
+        初期値: モック / 1st / 2nd / 3rd / 4th / 5th / 最終 / 色増しサンプル / 試験体 / 量産 / エイジングサンプル / 修理 / SOP / 治具
       </p>
       <div class="row" style="align-items:flex-end">
-        <div class="fg"><label>ステージ名</label>
+        <div class="fg"><label>大分類名</label>
           <input type="text" id="st-name" placeholder="例: 量産前確認">
         </div>
-        <button class="btn btn-mono btn-sm" onclick="addStage()">追加</button>
+        <div style="display:flex;align-items:center;gap:6px;padding-bottom:2px;white-space:nowrap">
+          <input type="checkbox" id="st-hassub" style="width:auto;margin:0">
+          <span style="font-size:13px;font-weight:700;color:#374151">中分類あり</span>
+        </div>
+        <input type="hidden" id="st-edit-orig">
+        <button class="btn btn-mono btn-sm" id="st-add-btn" onclick="addStage()">追加</button>
+        <button class="btn btn-p btn-sm" id="st-save-btn" style="display:none" onclick="saveStageEdit()">更新</button>
+        <button class="btn btn-g btn-sm" id="st-cancel-btn" style="display:none" onclick="cancelStageEdit()">キャンセル</button>
       </div>
       <div id="list-st" style="margin-top:32px" class="ld">読み込み中...</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-ttl acc-ttl closed" onclick="toggleAcc(this)">📋 フェーズ中分類管理</div>
+    <div class="acc-body closed">
+      <p class="setting-note">大分類で「中分類あり」に設定したフェーズを選んだ際に、任意で選択できる中分類のリストです。</p>
+      <div class="row" style="align-items:flex-end">
+        <div class="fg"><label>中分類名</label>
+          <input type="text" id="sc-name" placeholder="例: 型紙作成・修正">
+          <input type="hidden" id="sc-edit-orig">
+        </div>
+        <button class="btn btn-mono btn-sm" id="sc-add-btn" onclick="addSubcat()">追加</button>
+        <button class="btn btn-p btn-sm" id="sc-save-btn" style="display:none" onclick="saveSubcatEdit()">更新</button>
+        <button class="btn btn-g btn-sm" id="sc-cancel-btn" style="display:none" onclick="cancelSubcatEdit()">キャンセル</button>
+      </div>
+      <div id="list-sc" style="margin-top:32px" class="ld">読み込み中...</div>
     </div>
   </div>
 
@@ -433,8 +461,12 @@ tr:active td{background:#f5fbfb}
         </div>
       </div>
       <div class="modal-field">
-        <label>フェーズ</label>
-        <select id="m-stage"><option value="">-- 選択 --</option></select>
+        <label>フェーズ 大分類</label>
+        <select id="m-stage" onchange="onStageChange()"><option value="">-- 選択 --</option></select>
+      </div>
+      <div class="modal-field" id="m-subcat-field" style="display:none">
+        <label>フェーズ 中分類（任意）</label>
+        <select id="m-subcat"><option value="">-- 選択しない --</option></select>
       </div>
     </div>
     <div id="modal-other-fields" style="display:none">
@@ -488,7 +520,7 @@ const FIXED_BREAKS = [
 /* ======================== */
 /* 状態                     */
 /* ======================== */
-const S = { craftsmen:[], schedules:[], stages:[] };
+const S = { craftsmen:[], schedules:[], stages:[], subcats:[] };
 let tlRows          = [];
 let nextId          = 1;
 let colorIdx        = 0;
@@ -515,6 +547,7 @@ document.addEventListener('DOMContentLoaded', () => {
       S.craftsmen = d.craftsmen || [];
       S.schedules = d.schedules || [];
       S.stages    = d.stages    || [];
+      S.subcats   = d.subcats   || [];
       fillAll();
       renderLists();
     })
@@ -798,7 +831,7 @@ function renderTimeline() {
       bar.style.cssText  = `left:${leftPx}px;width:${widthPx}px;top:${topPx}px;background:${row.color};`;
       const titleLabel = row.type === 'other' ? (row.workType || 'その他') : (row.productName || '未設定');
       const titleSub   = row.type === 'other' ? '' : (row.stageName || '—');
-      bar.title = titleLabel + (titleSub ? ' / ' + titleSub : '') + '  ' + row.minutes + '分';
+      bar.title = titleLabel + (titleSub ? ' / ' + titleSub : '') + (row.stageSubcat ? ' / ' + row.stageSubcat : '') + '  ' + row.minutes + '分';
       const barLabel = row.type === 'other' ? esc(row.workType || 'その他') : esc(row.productName || '未設定');
       const barSub   = row.type === 'other' ? '' : esc(row.stageName || '—');
       bar.innerHTML = `
@@ -852,7 +885,7 @@ function renderLegend() {
       <div class="tl-leg-dot" style="background:${r.color}"></div>
       <span>${r.type === 'other'
         ? esc(r.workType || 'その他')
-        : `${esc(r.productName || '未設定')} / ${esc(r.stageName || '—')}`
+        : `${esc(r.productName || '未設定')} / ${esc(r.stageName || '—')}${r.stageSubcat ? ' / ' + esc(r.stageSubcat) : ''}`
       }</span>
       <span style="font-size:12px;color:#6b7a8d;font-weight:700;margin-left:4px">${r.minutes}分</span>
     </div>
@@ -1000,6 +1033,19 @@ function setModalType(type) {
   document.getElementById('type-btn-other').className  = 'modal-type-btn' + (type === 'other'  ? ' active-other'  : '');
 }
 
+function onStageChange() {
+  const name  = document.getElementById('m-stage').value;
+  const stage = S.stages.find(s => s.name === name);
+  const field = document.getElementById('m-subcat-field');
+  if (stage && stage.hasSub && S.subcats.length) {
+    fill('m-subcat', S.subcats.map(s => s.name), '-- 選択しない --');
+    field.style.display = '';
+  } else {
+    field.style.display = 'none';
+    document.getElementById('m-subcat').value = '';
+  }
+}
+
 function onProdChange() {
   const name = document.getElementById('m-prod').value;
   const sch  = S.schedules.find(s => s.name === name);
@@ -1033,6 +1079,8 @@ function openAddModal() {
   document.getElementById('modal-del').style.display  = 'none';
   document.getElementById('modal-copy').style.display = 'none';
   document.getElementById('prod-info').classList.remove('show');
+  document.getElementById('m-subcat-field').style.display = 'none';
+  document.getElementById('m-subcat').value = '';
   document.getElementById('modal-bg').classList.add('show');
 }
 
@@ -1043,13 +1091,15 @@ function openEditModal(id) {
   setModalType(row.type || 'sample');
   document.getElementById('modal-title').textContent    = '作業を編集';
   document.getElementById('modal-dot').style.background = row.color;
-  document.getElementById('m-prod').value     = row.productName || '';
-  document.getElementById('m-stage').value    = row.stageName   || '';
-  document.getElementById('m-worktype').value = row.workType    || '';
-  document.getElementById('m-memo').value     = row.memo        || '';
+  document.getElementById('m-prod').value     = row.productName  || '';
+  document.getElementById('m-stage').value    = row.stageName    || '';
+  document.getElementById('m-worktype').value = row.workType     || '';
+  document.getElementById('m-memo').value     = row.memo         || '';
   document.getElementById('modal-del').style.display  = '';
   document.getElementById('modal-copy').style.display = '';
   if (row.type !== 'other') onProdChange();
+  onStageChange();
+  document.getElementById('m-subcat').value = row.stageSubcat || '';
   document.getElementById('modal-bg').classList.add('show');
 }
 
@@ -1065,17 +1115,18 @@ function saveBlock() {
   const color    = COLORS[colorIdx % COLORS.length];
 
   if (currentModalType === 'sample') {
-    const prod  = document.getElementById('m-prod').value.trim();
-    const stage = document.getElementById('m-stage').value.trim();
+    const prod   = document.getElementById('m-prod').value.trim();
+    const stage  = document.getElementById('m-stage').value.trim();
+    const subcat = document.getElementById('m-subcat').value;
     if (!prod)  { toast('製品名を選択してください', 'err'); return; }
-    if (!stage) { toast('フェーズを選択してください', 'err'); return; }
+    if (!stage) { toast('フェーズ大分類を選択してください', 'err'); return; }
     if (editingId === null) {
       colorIdx++;
-      tlRows.push({ id:nextId++, type:'sample', productName:prod, stageName:stage, workType:'', minutes:defMin, color, memo });
+      tlRows.push({ id:nextId++, type:'sample', productName:prod, stageName:stage, stageSubcat:subcat, workType:'', minutes:defMin, color, memo });
       toast(`追加しました（${defMin}分）`, 'ok');
     } else {
       const row = tlRows.find(r => r.id === editingId);
-      if (row) Object.assign(row, { type:'sample', productName:prod, stageName:stage, workType:'', memo });
+      if (row) Object.assign(row, { type:'sample', productName:prod, stageName:stage, stageSubcat:subcat, workType:'', memo });
       toast('更新しました', 'ok');
     }
   } else {
@@ -1127,9 +1178,10 @@ function submitReport() {
   if (!date) { toast('日付を入力してください', 'err'); return; }
 
   const rows = tlRows.map(r => ({
-    type:        r.type || 'sample',
+    type:        r.type        || 'sample',
     productName: r.productName || '',
     stageName:   r.stageName   || '',
+    stageSubcat: r.stageSubcat || '',
     workType:    r.workType    || '',
     minutes:     r.minutes,
     memo:        r.memo || ''
@@ -1191,16 +1243,112 @@ function addSchedule() {
 }
 
 function addStage() {
-  const name = document.getElementById('st-name').value.trim();
-  if (!name) { toast('ステージ名を入力してください','err'); return; }
+  const name   = document.getElementById('st-name').value.trim();
+  const hasSub = document.getElementById('st-hassub').checked;
+  if (!name) { toast('大分類名を入力してください','err'); return; }
   google.script.run
-    .withSuccessHandler(r => { toast(r.message,r.success?'ok':'err'); if(r.success){document.getElementById('st-name').value=''; reload();} })
-    .addStage(name);
+    .withSuccessHandler(r => { toast(r.message,r.success?'ok':'err'); if(r.success){ document.getElementById('st-name').value=''; document.getElementById('st-hassub').checked=false; reload(); } })
+    .addStage(name, hasSub);
+}
+
+function addSubcat() {
+  const name = document.getElementById('sc-name').value.trim();
+  if (!name) { toast('中分類名を入力してください','err'); return; }
+  google.script.run
+    .withSuccessHandler(r => { toast(r.message,r.success?'ok':'err'); if(r.success){document.getElementById('sc-name').value=''; reload();} })
+    .addStageSubcat(name);
+}
+
+function editSchedule(name) {
+  const sch = S.schedules.find(s => s.name === name);
+  if (!sch) return;
+  document.getElementById('p-name').value   = sch.name;
+  document.getElementById('p-season').value = sch.season || '';
+  document.getElementById('p-brand').value  = sch.brand  || '';
+  document.getElementById('p-plan').value   = sch.plan   || '';
+  document.getElementById('p-edit-orig').value = sch.name;
+  document.getElementById('p-add-btn').style.display    = 'none';
+  document.getElementById('p-save-btn').style.display   = '';
+  document.getElementById('p-cancel-btn').style.display = '';
+  document.getElementById('p-name').focus();
+}
+
+function saveScheduleEdit() {
+  const orig = document.getElementById('p-edit-orig').value;
+  const name = document.getElementById('p-name').value.trim();
+  if (!name) { toast('製品名を入力してください','err'); return; }
+  google.script.run
+    .withSuccessHandler(r => { toast(r.message,r.success?'ok':'err'); if(r.success){ cancelScheduleEdit(); reload(); } })
+    .updateSchedule(orig, name, v('p-season'), v('p-brand'), v('p-plan'));
+}
+
+function cancelScheduleEdit() {
+  ['p-name','p-season','p-brand','p-plan'].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('p-edit-orig').value = '';
+  document.getElementById('p-add-btn').style.display    = '';
+  document.getElementById('p-save-btn').style.display   = 'none';
+  document.getElementById('p-cancel-btn').style.display = 'none';
+}
+
+function editStage(name) {
+  const st = S.stages.find(s => s.name === name);
+  if (!st) return;
+  document.getElementById('st-name').value    = st.name;
+  document.getElementById('st-hassub').checked = st.hasSub;
+  document.getElementById('st-edit-orig').value = st.name;
+  document.getElementById('st-add-btn').style.display    = 'none';
+  document.getElementById('st-save-btn').style.display   = '';
+  document.getElementById('st-cancel-btn').style.display = '';
+  document.getElementById('st-name').focus();
+}
+function saveStageEdit() {
+  const orig   = document.getElementById('st-edit-orig').value;
+  const name   = document.getElementById('st-name').value.trim();
+  const hasSub = document.getElementById('st-hassub').checked;
+  if (!name) { toast('大分類名を入力してください','err'); return; }
+  google.script.run
+    .withSuccessHandler(r => { toast(r.message,r.success?'ok':'err'); if(r.success){ cancelStageEdit(); reload(); } })
+    .updateStage(orig, name, hasSub);
+}
+function cancelStageEdit() {
+  document.getElementById('st-name').value     = '';
+  document.getElementById('st-hassub').checked = false;
+  document.getElementById('st-edit-orig').value = '';
+  document.getElementById('st-add-btn').style.display    = '';
+  document.getElementById('st-save-btn').style.display   = 'none';
+  document.getElementById('st-cancel-btn').style.display = 'none';
+}
+
+function editSubcat(name) {
+  const sc = S.subcats.find(s => s.name === name);
+  if (!sc) return;
+  document.getElementById('sc-name').value      = sc.name;
+  document.getElementById('sc-edit-orig').value = sc.name;
+  document.getElementById('sc-add-btn').style.display    = 'none';
+  document.getElementById('sc-save-btn').style.display   = '';
+  document.getElementById('sc-cancel-btn').style.display = '';
+  document.getElementById('sc-name').focus();
+}
+function saveSubcatEdit() {
+  const orig = document.getElementById('sc-edit-orig').value;
+  const name = document.getElementById('sc-name').value.trim();
+  if (!name) { toast('中分類名を入力してください','err'); return; }
+  google.script.run
+    .withSuccessHandler(r => { toast(r.message,r.success?'ok':'err'); if(r.success){ cancelSubcatEdit(); reload(); } })
+    .updateStageSubcat(orig, name);
+}
+function cancelSubcatEdit() {
+  document.getElementById('sc-name').value      = '';
+  document.getElementById('sc-edit-orig').value = '';
+  document.getElementById('sc-add-btn').style.display    = '';
+  document.getElementById('sc-save-btn').style.display   = 'none';
+  document.getElementById('sc-cancel-btn').style.display = 'none';
 }
 
 function delCraftsman(name){ if(!confirm(`「${name}」を削除しますか？`))return; google.script.run.withSuccessHandler(r=>{toast(r.message,r.success?'ok':'err');if(r.success)reload();}).deleteCraftsman(name); }
 function delSchedule(name) { if(!confirm(`「${name}」を削除しますか？`))return; google.script.run.withSuccessHandler(r=>{toast(r.message,r.success?'ok':'err');if(r.success)reload();}).deleteSchedule(name); }
 function delStage(name)    { if(!confirm(`「${name}」を削除しますか？`))return; google.script.run.withSuccessHandler(r=>{toast(r.message,r.success?'ok':'err');if(r.success)reload();}).deleteStage(name); }
+function delSubcat(name)   { if(!confirm(`「${name}」を削除しますか？`))return; google.script.run.withSuccessHandler(r=>{toast(r.message,r.success?'ok':'err');if(r.success)reload();}).deleteStageSubcat(name); }
 
 function renderLists() {
   document.getElementById('list-c').innerHTML = S.craftsmen.length
@@ -1215,13 +1363,29 @@ function renderLists() {
           esc(s.season) || '—',
           esc(s.brand)  || '—',
           esc(s.plan)   || '—',
-          `<button class="btn btn-d btn-sm" onclick="delSchedule('${esc(s.name)}')">削除</button>`
+          `<button class="btn btn-mono btn-sm" onclick="editSchedule('${esc(s.name)}')">修正</button>
+           <button class="btn btn-d btn-sm" onclick="delSchedule('${esc(s.name)}')">削除</button>`
         ])
       )
     : '<div class="empty">未登録</div>';
 
   document.getElementById('list-st').innerHTML = S.stages.length
-    ? mTable(['順番','ステージ名'], S.stages.map((s,i)=>[i+1, `<strong>${esc(s.name)}</strong>`, `<button class="btn btn-d btn-sm" onclick="delStage('${esc(s.name)}')">削除</button>`]))
+    ? mTable(
+        ['順番','大分類名','中分類'],
+        S.stages.map((s,i) => [
+          i+1,
+          `<strong>${esc(s.name)}</strong>`,
+          s.hasSub ? '<span class="badge b-bl">あり</span>' : '<span class="badge b-gy">なし</span>',
+          `<button class="btn btn-mono btn-sm" onclick="editStage('${esc(s.name)}')">修正</button>
+           <button class="btn btn-d btn-sm" onclick="delStage('${esc(s.name)}')">削除</button>`
+        ])
+      )
+    : '<div class="empty">未登録</div>';
+
+  document.getElementById('list-sc').innerHTML = S.subcats.length
+    ? mTable(['順番','中分類名'], S.subcats.map((s,i)=>[i+1, `<strong>${esc(s.name)}</strong>`,
+        `<button class="btn btn-mono btn-sm" onclick="editSubcat('${esc(s.name)}')">修正</button>
+         <button class="btn btn-d btn-sm" onclick="delSubcat('${esc(s.name)}')">削除</button>`]))
     : '<div class="empty">未登録</div>';
 }
 
@@ -1253,7 +1417,7 @@ function fill(id, items, placeholder) {
 function reload() {
   google.script.run
     .withSuccessHandler(d => {
-      S.craftsmen = d.craftsmen||[]; S.schedules = d.schedules||[]; S.stages = d.stages||[];
+      S.craftsmen = d.craftsmen||[]; S.schedules = d.schedules||[]; S.stages = d.stages||[]; S.subcats = d.subcats||[];
       fillAll(); renderLists();
     })
     .getInitialData();

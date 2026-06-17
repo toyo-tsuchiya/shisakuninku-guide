@@ -3,10 +3,11 @@
 // ============================================================
 
 const SHEETS = {
-  CRAFTSMEN:  '職人',
-  SCHEDULES:  'スケジュール',
-  STAGES:     'ステージ',
-  LOGS:       '日報ログ'
+  CRAFTSMEN:     '職人',
+  SCHEDULES:     'スケジュール',
+  STAGES:        'ステージ',
+  STAGE_SUBCATS: 'フェーズ中分類',
+  LOGS:          '日報ログ'
 };
 
 const MINUTES_PER_NINKU = 480;
@@ -46,26 +47,43 @@ function setup() {
     s.setColumnWidth(5, 200);
   }
 
-  // ステージマスター
+  // ステージマスター（フェーズ大分類）
   s = getOrCreate(ss, SHEETS.STAGES);
   if (s.getLastRow() === 0) {
-    s.appendRow(['ID', 'ステージ名', '順番']);
+    s.appendRow(['ID', 'ステージ名', '順番', '中分類あり']);
+    header(s, 4);
+    [
+      ['ST01', 'モック',             1, true],
+      ['ST02', '1st',                2, true],
+      ['ST03', '2nd',                3, true],
+      ['ST04', '3rd',                4, true],
+      ['ST05', '4th',                5, true],
+      ['ST06', '5th',                6, true],
+      ['ST07', '最終',               7, true],
+      ['ST08', '色増しサンプル',     8, true],
+      ['ST09', '試験体',             9, false],
+      ['ST10', '量産',              10, false],
+      ['ST11', 'エイジングサンプル', 11, false],
+      ['ST12', '修理',              12, false],
+      ['ST13', 'SOP',               13, false],
+      ['ST14', '治具',              14, false],
+    ].forEach(r => s.appendRow(r));
+  } else if (s.getLastColumn() < 4) {
+    s.getRange(1, 4).setValue('中分類あり');
+  }
+
+  // フェーズ中分類マスター
+  s = getOrCreate(ss, SHEETS.STAGE_SUBCATS);
+  if (s.getLastRow() === 0) {
+    s.appendRow(['ID', '中分類名', '順番']);
     header(s, 3);
-    const defaults = [
-      ['ST1', 'モック',        1],
-      ['ST2', '1st',           2],
-      ['ST3', '2nd',           3],
-      ['ST4', '最終（展示会）', 4],
-      ['ST5', '色増し前修正',  5],
-      ['ST6', '試験体',        6],
-      ['ST7', 'ショー用',      7],
-      ['ST8', '--- その他 ---', 8],
-      ['ST9', '社内MTG',       9],
-      ['ST10','面談',          10],
-      ['ST11','研修',          11],
-      ['ST12','事務作業',      12],
-    ];
-    defaults.forEach(r => s.appendRow(r));
+    [
+      ['SC1', '型紙・抜き型作成/修正',            1],
+      ['SC2', '仮制作（部分サンプル・部分修正）', 2],
+      ['SC3', '本制作（型修正がない場合）',       3],
+      ['SC4', '原価表作成・修正',                4],
+      ['SC5', '工程表作成・修正',                5],
+    ].forEach(r => s.appendRow(r));
   }
 
   // 日報ログ
@@ -74,13 +92,18 @@ function setup() {
     s.appendRow([
       'ID', '日付', '職人名',
       '出勤時刻', '退勤時刻', '休憩(分)', '実働(分)',
-      '種別', '製品名', 'フェーズ', '作業種別',
+      '種別', '製品名', 'フェーズ大分類', '作業種別',
       '作業時間(分)', '人工数', '労務費(円)',
-      'メモ', '提出日時', '企画名'
+      'メモ', '提出日時', '企画名', 'フェーズ中分類'
     ]);
-    header(s, 17);
+    header(s, 18);
     [2,3,8,9,13].forEach(c => s.setColumnWidth(c, 120));
     s.setColumnWidth(8, 220);
+  } else if (s.getLastColumn() < 18) {
+    s.getRange(1, 18).setValue('フェーズ中分類');
+    if (s.getRange(1, 10).getValue() === 'フェーズ') {
+      s.getRange(1, 10).setValue('フェーズ大分類');
+    }
   }
 
   return { success: true, message: 'セットアップ完了しました。' };
@@ -93,9 +116,9 @@ function fixLogHeaders() {
   const headers = [
     'ID', '日付', '職人名',
     '出勤時刻', '退勤時刻', '休憩(分)', '実働(分)',
-    '種別', '製品名', 'フェーズ', '作業種別',
+    '種別', '製品名', 'フェーズ大分類', '作業種別',
     '作業時間(分)', '人工数', '労務費(円)',
-    'メモ', '提出日時', '企画名'
+    'メモ', '提出日時', '企画名', 'フェーズ中分類'
   ];
   s.getRange(1, 1, 1, headers.length).setValues([headers]);
   header(s, headers.length);
@@ -110,7 +133,8 @@ function getInitialData() {
   return {
     craftsmen: getCraftsmen(ss),
     schedules: getSchedules(ss),
-    stages:    getStages(ss)
+    stages:    getStages(ss),
+    subcats:   getStageSubcats(ss)
   };
 }
 
@@ -135,6 +159,18 @@ function getSchedules(ss) {
 function getStages(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   const s = ss.getSheetByName(SHEETS.STAGES);
+  if (!s || s.getLastRow() <= 1) return [];
+  const hasSubCol = s.getLastColumn() >= 4;
+  const cols = hasSubCol ? 4 : 3;
+  return s.getRange(2, 1, s.getLastRow()-1, cols).getValues()
+    .filter(r => r[1])
+    .sort((a,b) => a[2]-b[2])
+    .map(r => ({ id:r[0], name:r[1], order:r[2], hasSub: hasSubCol ? !!r[3] : false }));
+}
+
+function getStageSubcats(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  const s = ss.getSheetByName(SHEETS.STAGE_SUBCATS);
   if (!s || s.getLastRow() <= 1) return [];
   return s.getRange(2, 1, s.getLastRow()-1, 3).getValues()
     .filter(r => r[1])
@@ -186,7 +222,8 @@ function submitReport(craftsmanName, dateStr, clockIn, clockOut, breakMin, rows,
       min, ninku, cost,
       row.memo || memo || '',
       submittedAt,
-      planName
+      planName,
+      isSample ? (row.stageSubcat||'') : ''
     ]);
   });
 
@@ -230,15 +267,58 @@ function addSchedule(name, season, brand, plan) {
 }
 function deleteSchedule(name) { return delRow(SHEETS.SCHEDULES, 2, name); }
 
-function addStage(name) {
+function updateSchedule(origName, name, season, brand, plan) {
+  if (!name) return { success:false, message:'製品名を入力してください。' };
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const s  = ss.getSheetByName(SHEETS.SCHEDULES);
+  if (!s || s.getLastRow() <= 1) return { success:false, message:'データがありません。' };
+  const data = s.getRange(2, 2, s.getLastRow()-1, 1).getValues();
+  const idx  = data.findIndex(r => r[0] === origName);
+  if (idx === -1) return { success:false, message:`「${origName}」が見つかりません。` };
+  s.getRange(idx+2, 2, 1, 4).setValues([[name, season||'', brand||'', plan||'']]);
+  return { success:true, message:`「${name}」を更新しました。` };
+}
+
+function addStage(name, hasSub) {
   if (!name) return { success:false, message:'ステージ名を入力してください。' };
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const s  = ss.getSheetByName(SHEETS.STAGES);
   const order = s.getLastRow();
-  s.appendRow(['ST'+order, name, order]);
+  s.appendRow(['ST'+order, name, order, hasSub ? true : false]);
   return { success:true, message:`ステージ「${name}」を追加しました。` };
 }
-function deleteStage(name) { return delRow(SHEETS.STAGES, 2, name); }
+function deleteStage(name)       { return delRow(SHEETS.STAGES,        2, name); }
+function updateStage(origName, name, hasSub) {
+  if (!name) return { success:false, message:'大分類名を入力してください。' };
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const s  = ss.getSheetByName(SHEETS.STAGES);
+  if (!s || s.getLastRow() <= 1) return { success:false, message:'データがありません。' };
+  const data = s.getRange(2, 2, s.getLastRow()-1, 1).getValues();
+  const idx  = data.findIndex(r => r[0] === origName);
+  if (idx === -1) return { success:false, message:`「${origName}」が見つかりません。` };
+  s.getRange(idx+2, 2, 1, 3).setValues([[name, s.getRange(idx+2, 3).getValue(), hasSub ? true : false]]);
+  return { success:true, message:`「${name}」を更新しました。` };
+}
+function addStageSubcat(name) {
+  if (!name) return { success:false, message:'中分類名を入力してください。' };
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const s  = ss.getSheetByName(SHEETS.STAGE_SUBCATS);
+  const order = s.getLastRow();
+  s.appendRow(['SC'+order, name, order]);
+  return { success:true, message:`中分類「${name}」を追加しました。` };
+}
+function deleteStageSubcat(name) { return delRow(SHEETS.STAGE_SUBCATS, 2, name); }
+function updateStageSubcat(origName, name) {
+  if (!name) return { success:false, message:'中分類名を入力してください。' };
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const s  = ss.getSheetByName(SHEETS.STAGE_SUBCATS);
+  if (!s || s.getLastRow() <= 1) return { success:false, message:'データがありません。' };
+  const data = s.getRange(2, 2, s.getLastRow()-1, 1).getValues();
+  const idx  = data.findIndex(r => r[0] === origName);
+  if (idx === -1) return { success:false, message:`「${origName}」が見つかりません。` };
+  s.getRange(idx+2, 2).setValue(name);
+  return { success:true, message:`「${name}」を更新しました。` };
+}
 
 // ----------------------------------------------------------
 // ユーティリティ

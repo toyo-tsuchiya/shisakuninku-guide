@@ -163,7 +163,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
       <ul class="toc-list">
         <li><a href="#admin"><span class="toc-part admin">A1</span>初回セットアップ</a></li>
         <li><a href="#register-craftsman"><span class="toc-part admin">A2</span>職人を登録する</a></li>
-        <li><a href="#register-product"><span class="toc-part admin">A3</span>製品・ステージを登録する</a></li>
+        <li><a href="#register-product"><span class="toc-part admin">A3</span>製品・フェーズを登録する</a></li>
       </ul>
     </div>
     <div>
@@ -247,7 +247,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
     <div class="step" id="register-product">
       <div class="step-num admin">A3</div>
       <div class="step-body">
-        <h3>製品・ステージを登録する</h3>
+        <h3>製品・フェーズを登録する</h3>
         <p>「👜 製品管理」から現在進行中のサンプル製品を登録します。シーズン・型振・VMD、ブランド、企画名、製品名の順に入力してください。</p>
         <div class="mock">
           <div class="mock-label">設定タブ ＞ 製品管理</div>
@@ -280,7 +280,31 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
             </div>
           </div>
         </div>
-        <p style="font-size:14px;color:#4b5563;margin-top:12px">「🔢 ステージ管理」では作業フェーズ（モック / 1st / 2nd など）を登録・追加できます。初期値は自動で入っています。</p>
+        <p style="font-size:14px;color:#4b5563;margin-top:12px">設定タブにはフェーズの管理が2段階あります。</p>
+        <table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:14px">
+          <thead>
+            <tr style="background:#f3f4f6">
+              <th style="padding:10px 14px;text-align:left;border-bottom:2px solid #e5e7eb;font-size:13px;color:#6b7280">設定項目</th>
+              <th style="padding:10px 14px;text-align:left;border-bottom:2px solid #e5e7eb;font-size:13px;color:#6b7280">内容</th>
+              <th style="padding:10px 14px;text-align:left;border-bottom:2px solid #e5e7eb;font-size:13px;color:#6b7280">初期値</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom:1px solid #f3f4f6">
+              <td style="padding:10px 14px;font-weight:700">🔢 フェーズ大分類管理</td>
+              <td style="padding:10px 14px;color:#4b5563">サンプル製造のメインフェーズ。日報入力時の「フェーズ 大分類」欄に表示されます。</td>
+              <td style="padding:10px 14px;color:#6b7280;font-size:13px">モック / 1st / 2nd / 3rd / 4th / 5th / 最終 / 色増しサンプル / 試験体 / 量産 / エイジングサンプル / 修理 / SOP / 治具</td>
+            </tr>
+            <tr>
+              <td style="padding:10px 14px;font-weight:700">📋 フェーズ中分類管理</td>
+              <td style="padding:10px 14px;color:#4b5563">フェーズ内での作業種別。大分類に「中分類あり」をチェックしたフェーズを選んだときだけ入力欄が現れます。</td>
+              <td style="padding:10px 14px;color:#6b7280;font-size:13px">型紙・抜き型作成/修正 / 仮制作（部分サンプル・部分修正）/ 本制作（型修正がない場合）/ 原価表作成・修正 / 工程表作成・修正</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="tip" style="margin-top:12px">
+          <p>初期値はすでに入っているので追加作業は不要です。フェーズ名を会社独自の呼び方に変更したい場合のみ、設定タブから修正してください。</p>
+        </div>
 
         <div class="point" style="background:#fff8f0;border-color:#f97316;margin-top:16px">
           <div class="point-icon">⚠️</div>
@@ -418,8 +442,12 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
                 <div class="mock-input active">バックパック 組み立て ▼</div>
               </div>
               <div class="mock-modal-field">
-                <label>フェーズ</label>
+                <label>フェーズ 大分類</label>
                 <div class="mock-input">1st ▼</div>
+              </div>
+              <div class="mock-modal-field">
+                <label>フェーズ 中分類（任意）</label>
+                <div class="mock-input" style="color:#6b7280">型紙・抜き型作成/修正 ▼</div>
               </div>
               <div class="mock-modal-field">
                 <label>メモ（任意）</label>
@@ -457,6 +485,13 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
         <div class="point">
           <div class="point-icon">💡</div>
           <p>作業が複数ある場合は「＋ 作業を追加」を繰り返します。追加した作業は自動で時間が割り振られます。</p>
+        </div>
+        <div class="point" style="margin-top:8px;background:#fefce8;border-color:#ca8a04">
+          <div class="point-icon">📋</div>
+          <div>
+            <p style="margin-bottom:6px">「フェーズ 中分類」は<strong>任意</strong>ですが、入力すると集計レポートで「型紙作成に何時間かかったか」が企画ごとに比較できるようになります。</p>
+            <p style="font-weight:400;color:#6b7280;font-size:13px">中分類の選択肢はフェーズ大分類が「中分類あり」に設定されている場合のみ表示されます（初期設定ではモック・1st〜最終・色増しサンプルが対象）。</p>
+          </div>
         </div>
       </div>
     </div>

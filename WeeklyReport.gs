@@ -17,12 +17,17 @@ const L = {
   actualMin: 6,  // G: 実働(分)
   type:      7,  // H: 種別
   product:   8,  // I: 製品名
-  phase:     9,  // J: フェーズ
+  phase:     9,  // J: フェーズ大分類
   workType:  10, // K: 作業種別
   workMin:   11, // L: 作業時間(分)
   laborCost: 13, // N: 労務費(円)
   planName:  16, // Q: 企画名
+  subcat:    17, // R: フェーズ中分類
 };
+
+// フェーズ中分類マスター（Code.gsのSHEETS.STAGE_SUBCATSと同期）
+const SUBCAT_KEYS   = ['型紙・抜き型作成/修正', '仮制作（部分サンプル・部分修正）', '本制作（型修正がない場合）', '原価表作成・修正', '工程表作成・修正'];
+const SUBCAT_LABELS = ['型紙・抜き型', '仮制作', '本制作', '原価表', '工程表'];
 
 // スケジュールSSの列インデックス（0始まり）
 const S = {
@@ -41,7 +46,7 @@ const S = {
 // ================================================================
 function generateWeeklyReport() {
   const { startDate, endDate } = getWeekRange();
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       17);
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       18);
   const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
   const reportSS     = getOrCreateReportSS();
 
@@ -267,7 +272,7 @@ function generateMonthlyReportForMonth(year, month) {
   const endDate   = new Date(year, month,       0, 23, 59, 59, 999);
   const label     = year + '年' + String(month).padStart(2, '0') + '月';
 
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       17);
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       18);
   const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
   const reportSS     = getOrCreateReportSS();
 
@@ -415,6 +420,7 @@ function appendToBrandReport(reportSS, logRows, scheduleRows, startDate, endDate
 // ⑥ 企画別（月次追記型・月内 + 累計）「誰が入って・どれくらいで」
 // ================================================================
 function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDate, label) {
+  const PHASE_KEYS = ['モック', '1st', '2nd', '3rd'];
   const HEADERS = [
     'ステータス',
     '年月', '企画名', 'ブランド', '製品名',
@@ -423,10 +429,18 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
     '実作業開始', '実作業最終', '作業日数',
     '計画開始', '計画完了',
     '月内_モック(h)', '月内_1st(h)', '月内_2nd(h)', '月内_3rd(h)', '月内_その他(h)',
+    ...SUBCAT_LABELS.map(l => '月内_' + l + '(h)'),
     '累計_モック(h)', '累計_1st(h)', '累計_2nd(h)', '累計_3rd(h)', '累計_その他(h)',
+    ...SUBCAT_LABELS.map(l => '累計_' + l + '(h)'),
   ];
-  const PHASE_KEYS = ['モック', '1st', '2nd', '3rd'];
   const sheet = getOrInitSheet(reportSS, '⑥企画別', HEADERS, '#A142F4');
+
+  // ヘッダー列数が変わった場合（中分類列追加など）は自動更新
+  if (sheet.getLastColumn() < HEADERS.length) {
+    sheet.getRange(1, 1, 1, HEADERS.length)
+      .setValues([HEADERS])
+      .setBackground('#37474F').setFontColor('#FFFFFF').setFontWeight('bold').setHorizontalAlignment('center');
+  }
 
   if (labelExists(sheet, label, 2)) {
     Logger.log('⑥企画別: ' + label + ' 既存 → スキップ');
@@ -509,6 +523,18 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
         return m > 0 ? +(m / 60).toFixed(1) : '';
       });
 
+      // 中分類別（月内）
+      const monthSubcatMin = new Map();
+      for (const r of monthLogs) {
+        const sc = r[L.subcat] || '';
+        if (!sc || !SUBCAT_KEYS.includes(sc)) continue;
+        monthSubcatMin.set(sc, (monthSubcatMin.get(sc) || 0) + (Number(r[L.workMin]) || 0));
+      }
+      const monthSubcatCols = SUBCAT_KEYS.map(sc => {
+        const m = monthSubcatMin.get(sc) || 0;
+        return m > 0 ? +(m / 60).toFixed(1) : '';
+      });
+
       // フェーズ別累計（全期間）
       const allPhaseMin = new Map();
       for (const r of allLogs) {
@@ -521,6 +547,18 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
         return m > 0 ? +(m / 60).toFixed(1) : '';
       });
 
+      // 中分類別累計（全期間）
+      const allSubcatMin = new Map();
+      for (const r of allLogs) {
+        const sc = r[L.subcat] || '';
+        if (!sc || !SUBCAT_KEYS.includes(sc)) continue;
+        allSubcatMin.set(sc, (allSubcatMin.get(sc) || 0) + (Number(r[L.workMin]) || 0));
+      }
+      const subcatCols = SUBCAT_KEYS.map(sc => {
+        const m = allSubcatMin.get(sc) || 0;
+        return m > 0 ? +(m / 60).toFixed(1) : '';
+      });
+
       return [
         statuses,
         label, planName, brand, products,
@@ -530,7 +568,9 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
         firstDate ? dFmt(firstDate) : '', lastDate ? dFmt(lastDate) : '', spanDays,
         planStart ? dFmt(planStart) : '', planEnd  ? dFmt(planEnd)  : '',
         ...monthPhaseCols,
+        ...monthSubcatCols,
         ...phaseCols,
+        ...subcatCols,
       ];
     });
 
@@ -693,7 +733,7 @@ function generateWeeklyReportBackfill() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       17);
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       18);
   const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
   const reportSS     = getOrCreateReportSS();
 
@@ -740,7 +780,7 @@ function reorderSheets() {
 // ③案件進捗を単体で更新するラッパー
 // ================================================================
 function runProjectProgress() {
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,      17);
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,      18);
   const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 13, 6);
   const reportSS     = getOrCreateReportSS();
   overwriteProjectProgress(reportSS, logRows, scheduleRows);
@@ -860,7 +900,7 @@ function debugWeeklyReport() {
   const { startDate, endDate } = getWeekRange();
   Logger.log('=== 集計期間: ' + dFmt(startDate) + ' 〜 ' + dFmt(endDate) + ' ===');
 
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       17);
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       18);
   const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
 
   const sampleLogs = logRows.filter(r => r[L.type] === 'サンプル製造');
@@ -888,7 +928,7 @@ function debugWeeklyReport() {
 // 未突合の原因調査
 // ================================================================
 function debugUnmatched() {
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,      17);
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,      18);
   const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 13, 6);
 
   const scheduleProducts  = [...new Set(scheduleRows.map(r => r[S.product]).filter(Boolean))].sort();
@@ -1043,14 +1083,16 @@ function createUsageGuideDoc() {
   ]);
 
   addHeading('⑥ 企画別（紫タブ）', H2);
-  addText('企画単位で誰がいつ何時間使ったか（月次追記）。フェーズ別累計（モック/1st/2nd/3rd）も含む。');
+  addText('企画単位で誰がいつ何時間使ったか（月次追記）。フェーズ大分類（モック/1st/2nd/3rd）・中分類（型紙/仮制作/本制作/原価表/工程表）の両方の内訳列あり。');
   addTable([
     ['見るポイント', '活用例'],
     ['累計_モック〜3rd', 'モックより1stが短ければ学習が起きている証拠'],
-    ['フェーズ内訳（月内）', '今月どのフェーズに時間を使ったか'],
+    ['累計_型紙・抜き型', '型紙作成に費やした累計時間。企画間・フェーズ間で比較可能'],
+    ['累計_仮制作', '部分修正・部分サンプルにかかった累計時間'],
+    ['月内_中分類各列', '今月どの作業種別に時間を使ったか'],
     ['作業日数', '試作開始から完了までの実稼働日数'],
   ]);
-  addItalic('「この企画、なぜ時間がかかったか」の分析起点になるシート。');
+  addItalic('「この企画、なぜ時間がかかったか」の分析起点になるシート。型紙作成 vs 仮制作の比率を企画間で比べることで、工程ごとのボトルネックが見える。');
   body.appendParagraph('');
 
   addHeading('⑦ 職人別（橙タブ）', H2);
@@ -1229,9 +1271,12 @@ function createUsageGuideDoc() {
     ['作業日数', '実作業最終 − 実作業開始 + 1（カレンダー日数）'],
     ['計画開始', 'スケジュールSSの試作開始日'],
     ['計画完了', 'スケジュールSSの試作完了日'],
-    ['月内_モック(h)', '当月・フェーズ＝モックの作業時間(分)合計 ÷ 60'],
-    ['月内_1st〜その他(h)', '同上（1st / 2nd / 3rd / その他）各フェーズ列'],
-    ['累計_モック〜その他(h)', '同上の全期間版（5列）'],
+    ['月内_モック(h)', '当月・フェーズ大分類＝モックの作業時間(分)合計 ÷ 60'],
+    ['月内_1st〜その他(h)', '同上（1st / 2nd / 3rd / その他）各フェーズ大分類列'],
+    ['月内_型紙・抜き型(h)', '当月・中分類＝型紙・抜き型作成/修正の作業時間(分)合計 ÷ 60'],
+    ['月内_仮制作〜工程表(h)', '同上（仮制作 / 本制作 / 原価表 / 工程表）各中分類列'],
+    ['累計_モック〜その他(h)', '全期間版のフェーズ大分類内訳（5列）'],
+    ['累計_型紙・抜き型〜工程表(h)', '全期間版のフェーズ中分類内訳（5列）。企画間比較の主役'],
   ]);
 
   addHeading('⑦ 職人別', H3);

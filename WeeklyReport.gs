@@ -33,7 +33,7 @@ const S = {
   deliveryDate: 8,  // I: 納品希望日
   startDate:    9,  // J: 試作開始日
   endDate:      10, // K: 試作完了日
-  status:       11, // L: ステータス
+  status:       12, // M: ステータス
 };
 
 // ================================================================
@@ -42,7 +42,7 @@ const S = {
 function generateWeeklyReport() {
   const { startDate, endDate } = getWeekRange();
   const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       17);
-  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  12);
+  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
   const reportSS     = getOrCreateReportSS();
 
   appendToWeeklyTrend(reportSS, logRows, startDate, endDate);
@@ -68,11 +68,11 @@ function getWeekRange() {
 // ① 週次推移（追記型）
 // ================================================================
 function appendToWeeklyTrend(reportSS, logRows, startDate, endDate) {
-  const HEADERS = ['集計開始', '集計終了', '稼働人数', '稼働日数', 'フルニンク(人工)', '実績ニンク(人工)', '実働(h)', '製造(h)', '間接(h)', '製造比率(%)', '製品数', '労務費(円)'];
+  const HEADERS = ['集計開始', '集計終了', '実稼働人工', '稼働日数', 'フルニンク(人工)', '稼働人数(参考)', '実働(h)', '製造(h)', '間接(h)', '製造比率(%)', '製品数', '労務費(円)'];
   const sheet = getOrInitSheet(reportSS, '①週次推移', HEADERS, '#4285F4');
 
-  // 既存シートに列が追加された場合はヘッダーを更新する
-  if (sheet.getLastColumn() < HEADERS.length) {
+  // ヘッダーが変わった場合は自動更新（列名変更・列追加どちらにも対応）
+  if (sheet.getRange(1, 3).getValue() !== HEADERS[2]) {
     sheet.getRange(1, 1, 1, HEADERS.length)
       .setValues([HEADERS])
       .setBackground('#37474F').setFontColor('#FFFFFF').setFontWeight('bold').setHorizontalAlignment('center');
@@ -107,8 +107,8 @@ function appendToWeeklyTrend(reportSS, logRows, startDate, endDate) {
 
   sheet.appendRow([
     dFmt(startDate), dFmt(endDate),
-    workerCount, workDays,
-    fullNinku, actualNinku,
+    actualNinku, workDays,
+    fullNinku, workerCount,
     +(totalActualMin / 60).toFixed(1),
     +(totalMfgMin    / 60).toFixed(1),
     +(totalOtherMin  / 60).toFixed(1),
@@ -173,22 +173,24 @@ function appendToWorkerWeekly(reportSS, logRows, startDate, endDate) {
 // ③ 案件進捗（毎週上書き・全案件累計）
 // ================================================================
 function overwriteProjectProgress(reportSS, logRows, scheduleRows) {
-  const HEADERS = [
-    '製品名', 'フェーズ', '企画名', 'ブランド',
-    '納品希望日', '残日数', '計画開始', '計画完了',
-    '累計工数(h)', '累計労務費(円)', '担当者（全期間）', 'ステータス',
-  ];
-  const sheet = getOrInitSheet(reportSS, '③案件進捗', HEADERS, '#34A853');
+  const HEADERS = ['製品名', '企画名', 'ステータス', 'フェーズ', '累計工数(h)', '累計労務費(円)', '納品希望日', '残日数'];
+  const sheet = getOrInitSheet(reportSS, '⑦製品別進捗', HEADERS, '#34A853');
 
   const lastRow = sheet.getLastRow();
-  if (lastRow > 1) sheet.deleteRows(2, lastRow - 1);
+  if (lastRow > 1) {
+    sheet.getRange(2, 1, lastRow - 1, HEADERS.length).clearContent();
+    if (lastRow > 2) sheet.deleteRows(3, lastRow - 2);
+  }
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  const EXCLUDE_STATUSES = ['完了', '中断'];
+  const activeSchedules = scheduleRows.filter(s => !EXCLUDE_STATUSES.includes(String(s[S.status] || '').trim()));
+
   const productMap    = new Map();
   const planToProduct = new Map();
-  for (const sched of scheduleRows) {
+  for (const sched of activeSchedules) {
     const product  = sched[S.product];
     const planName = sched[S.planName];
     if (!product) continue;
@@ -203,19 +205,15 @@ function overwriteProjectProgress(reportSS, logRows, scheduleRows) {
   const rows = [];
 
   for (const [productName, scheds] of productMap) {
-    const phases         = [...new Set(scheds.map(s => s[S.phase]).filter(Boolean))].join('・');
-    const brand          = scheds[0][S.brand]    || '';
+
     const planName       = scheds[0][S.planName] || '';
-    const statuses       = [...new Set(scheds.map(s => s[S.status]).filter(Boolean))].join('・');
+    const statuses       = [...new Set(scheds.map(s => String(s[S.status] || '').trim()).filter(Boolean))].join('・') || '-';
+    const phases         = [...new Set(scheds.map(s => s[S.phase]).filter(Boolean))].join('・') || '-';
     const schedPlanNames = new Set(scheds.map(s => s[S.planName]).filter(Boolean));
 
-    const startDates   = scheds.map(s => toDate(s[S.startDate])).filter(Boolean);
-    const endDates     = scheds.map(s => toDate(s[S.endDate])).filter(Boolean);
     const delivDates   = scheds.map(s => toDate(s[S.deliveryDate])).filter(Boolean);
-    const planStart    = startDates.length ? new Date(Math.min(...startDates)) : null;
-    const planEnd      = endDates.length   ? new Date(Math.max(...endDates))   : null;
     const deliveryDate = delivDates.length ? new Date(Math.min(...delivDates)) : null;
-    const remainDays   = deliveryDate ? Math.ceil((deliveryDate - today) / 86400000) : '';
+    const remainDays   = deliveryDate ? Math.ceil((deliveryDate - today) / 86400000) : '-';
 
     const matched = sampleLogs.filter(r => {
       const lp    = r[L.product];
@@ -225,26 +223,23 @@ function overwriteProjectProgress(reportSS, logRows, scheduleRows) {
 
     const totalMin  = colSum(matched, L.workMin);
     const totalCost = colSum(matched, L.laborCost);
-    const workers   = [...new Set(matched.map(r => r[L.worker]).filter(Boolean))].join('、');
 
     rows.push([
-      productName, phases, planName, brand,
-      deliveryDate ? dFmt(deliveryDate) : '', remainDays,
-      planStart ? dFmt(planStart) : '', planEnd ? dFmt(planEnd) : '',
+      productName, planName, statuses, phases,
       totalMin  > 0 ? +(totalMin  / 60).toFixed(1) : '',
       totalCost > 0 ? totalCost : '',
-      workers, statuses,
+      deliveryDate ? dFmt(deliveryDate) : '-', remainDays,
     ]);
   }
 
   if (rows.length > 0) {
     sheet.getRange(2, 1, rows.length, HEADERS.length).setValues(rows);
-    sheet.getRange(2, 10, rows.length, 1).setNumberFormat('#,##0');
+    sheet.getRange(2, 6, rows.length, 1).setNumberFormat('#,##0');
 
     for (let i = 0; i < rows.length; i++) {
-      const remain = rows[i][5];
-      if (remain === '') continue;
-      const cell = sheet.getRange(i + 2, 6);
+      const remain = rows[i][7];
+      if (remain === '-' || remain === '') continue;
+      const cell = sheet.getRange(i + 2, 8);
       if      (remain <= 3) cell.setFontColor('#D32F2F').setFontWeight('bold');
       else if (remain <= 7) cell.setFontColor('#F57C00');
     }
@@ -252,7 +247,7 @@ function overwriteProjectProgress(reportSS, logRows, scheduleRows) {
 
   sheet.setFrozenRows(1);
   sheet.autoResizeColumns(1, HEADERS.length);
-  Logger.log('③案件進捗 更新完了（' + rows.length + '件）');
+  Logger.log('③製品別進捗 更新完了（' + rows.length + '件）');
 }
 
 // ================================================================
@@ -273,13 +268,12 @@ function generateMonthlyReportForMonth(year, month) {
   const label     = year + '年' + String(month).padStart(2, '0') + '月';
 
   const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       17);
-  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  12);
+  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
   const reportSS     = getOrCreateReportSS();
 
   appendToMonthlyTrend(reportSS, logRows, startDate, endDate, label);
   appendToBrandReport(reportSS, logRows, scheduleRows, startDate, endDate, label);
   appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDate, label);
-  appendToWorkerDetailReport(reportSS, logRows, scheduleRows, startDate, endDate, label);
   appendToWorkerMonthly(reportSS, logRows, startDate, endDate, label);
 
   Logger.log(label + ' 月次レポート完了: ' + reportSS.getUrl());
@@ -289,8 +283,15 @@ function generateMonthlyReportForMonth(year, month) {
 // ④ 月次推移（追記型）
 // ================================================================
 function appendToMonthlyTrend(reportSS, logRows, startDate, endDate, label) {
-  const HEADERS = ['年月', '稼働人数', '稼働日数', '実働(h)', '製造(h)', '間接(h)', '製造比率(%)', '製品数', '企画数', '平均製品工数(h)', '労務費(円)'];
-  const sheet = getOrInitSheet(reportSS, '④月次推移', HEADERS, '#FBBC04');
+  const HEADERS = ['年月', '実稼働人工', '稼働日数', '実働(h)', '製造(h)', '間接(h)', '製造比率(%)', '製品数', '企画数', '平均製品工数(h)', '労務費(円)'];
+  const sheet = getOrInitSheet(reportSS, '③月別推移', HEADERS, '#FBBC04');
+
+  // ヘッダーが変わった場合は自動更新
+  if (sheet.getRange(1, 2).getValue() !== HEADERS[1]) {
+    sheet.getRange(1, 1, 1, HEADERS.length)
+      .setValues([HEADERS])
+      .setBackground('#37474F').setFontColor('#FFFFFF').setFontWeight('bold').setHorizontalAlignment('center');
+  }
 
   if (labelExists(sheet, label)) {
     Logger.log('④月次推移: ' + label + ' 既存 → スキップ');
@@ -306,19 +307,19 @@ function appendToMonthlyTrend(reportSS, logRows, startDate, endDate, label) {
     const k = r[L.worker] + '_' + dFmt(toDate(r[L.date]));
     if (!actualByKey.has(k)) actualByKey.set(k, Number(r[L.actualMin]) || 0);
   }
+  const actualNinku      = actualByKey.size;
   const totalActualMin   = [...actualByKey.values()].reduce((a, b) => a + b, 0);
   const totalMfgMin      = colSum(sampleLogs,    L.workMin);
   const totalOtherMin    = colSum(nonSampleLogs, L.workMin);
   const totalCost        = colSum(monthLogs,     L.laborCost);
   const workDays         = new Set(monthLogs.map(r => dFmt(toDate(r[L.date])))).size;
-  const workerCount      = new Set(monthLogs.map(r => r[L.worker]).filter(Boolean)).size;
   const productCount     = new Set(sampleLogs.map(r => r[L.product]).filter(Boolean)).size;
   const planCount        = new Set(sampleLogs.map(r => r[L.planName]).filter(Boolean)).size;
   const mfgRatio         = totalActualMin > 0 ? Math.round(totalMfgMin / totalActualMin * 100) : 0;
   const avgMinPerProduct = productCount > 0 ? totalMfgMin / productCount : 0;
 
   sheet.appendRow([
-    label, workerCount, workDays,
+    label, actualNinku, workDays,
     +(totalActualMin   / 60).toFixed(1),
     +(totalMfgMin      / 60).toFixed(1),
     +(totalOtherMin    / 60).toFixed(1),
@@ -630,7 +631,7 @@ function appendToWorkerDetailReport(reportSS, logRows, scheduleRows, startDate, 
 // ================================================================
 function appendToWorkerMonthly(reportSS, logRows, startDate, endDate, label) {
   const HEADERS = ['年月', '職人名', '稼働日数', '実働(h)', '製造(h)', '間接(h)', '製造比率(%)', '労務費(円)'];
-  const sheet = getOrInitSheet(reportSS, '⑧職人別月次', HEADERS, '#4DD0E1');
+  const sheet = getOrInitSheet(reportSS, '④職人別月次', HEADERS, '#4DD0E1');
 
   if (labelExists(sheet, label)) {
     Logger.log('⑧職人別月次: ' + label + ' 既存 → スキップ');
@@ -685,7 +686,7 @@ function appendToWorkerMonthly(reportSS, logRows, startDate, endDate, label) {
 // ================================================================
 function generateWeeklyReportBackfill() {
   // ★ 開始日を変更して実行してください
-  const START_DATE_STR = '2026/05/26';
+  const START_DATE_STR = '2026/05/01';
 
   const startDate = new Date(START_DATE_STR);
   startDate.setHours(0, 0, 0, 0);
@@ -693,7 +694,7 @@ function generateWeeklyReportBackfill() {
   today.setHours(0, 0, 0, 0);
 
   const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       17);
-  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  12);
+  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
   const reportSS     = getOrCreateReportSS();
 
   let current = new Date(startDate);
@@ -723,6 +724,55 @@ function generateWeeklyReportBackfill() {
 }
 
 // ================================================================
+// シートの順番を並べ替える（1回のみ実行）
+// ================================================================
+function reorderSheets() {
+  const ss = getOrCreateReportSS();
+  const order = ['①週次推移', '②職人別週次', '③月別推移', '④職人別月次', '⑤ブランド別', '⑥企画別', '⑦製品別進捗'];
+  order.forEach((name, i) => {
+    const sheet = ss.getSheetByName(name);
+    if (sheet) { ss.setActiveSheet(sheet); ss.moveActiveSheet(i + 1); }
+  });
+  Logger.log('シート並び替え完了');
+}
+
+// ================================================================
+// ③案件進捗を単体で更新するラッパー
+// ================================================================
+function runProjectProgress() {
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,      17);
+  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 13, 6);
+  const reportSS     = getOrCreateReportSS();
+  overwriteProjectProgress(reportSS, logRows, scheduleRows);
+}
+
+// ================================================================
+// undefined行クリーンアップ（引数なし誤実行で生じた不正行を削除）
+// ================================================================
+function cleanupUndefinedRows() {
+  const reportSS = getOrCreateReportSS();
+  const targets = ['③月別推移', '⑤ブランド別', '⑥企画別', '⑦職人別', '④職人別月次'];
+  targets.forEach(name => {
+    const sheet = reportSS.getSheetByName(name);
+    if (!sheet) return;
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return;
+    const vals = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let i = vals.length - 1; i >= 0; i--) {
+      const v = String(vals[i][0]);
+      if (v.includes('undefined') || v.trim() === '') {
+        sheet.deleteRow(i + 2);
+        Logger.log(name + ': ' + (i + 2) + '行目を削除（' + v + '）');
+      }
+    }
+  });
+  Logger.log('クリーンアップ完了');
+}
+
+// 2026年05月の月次を⑧だけ再生成するラッパー（⑧が空の場合に1回だけ実行）
+function run202605() { generateMonthlyReportForMonth(2026, 5); }
+
+// ================================================================
 // トリガー設定
 // ================================================================
 function setupWeeklyTrigger() {
@@ -746,12 +796,13 @@ function setupMonthlyTrigger() {
 // ================================================================
 // スプレッドシートからデータ取得
 // ================================================================
-function getSheetData(ssId, sheetName, cols) {
+function getSheetData(ssId, sheetName, cols, startRow) {
+  startRow = startRow || 2;
   const sheet = SpreadsheetApp.openById(ssId).getSheetByName(sheetName);
   if (!sheet) throw new Error('シートが見つかりません: ' + sheetName);
   const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return [];
-  return sheet.getRange(2, 1, lastRow - 1, cols).getValues();
+  if (lastRow < startRow) return [];
+  return sheet.getRange(startRow, 1, lastRow - startRow + 1, cols).getValues();
 }
 
 // ================================================================
@@ -810,7 +861,7 @@ function debugWeeklyReport() {
   Logger.log('=== 集計期間: ' + dFmt(startDate) + ' 〜 ' + dFmt(endDate) + ' ===');
 
   const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       17);
-  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  12);
+  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
 
   const sampleLogs = logRows.filter(r => r[L.type] === 'サンプル製造');
   const weekLogs   = sampleLogs.filter(r => { const d = toDate(r[L.date]); return d && d >= startDate && d <= endDate; });
@@ -838,7 +889,7 @@ function debugWeeklyReport() {
 // ================================================================
 function debugUnmatched() {
   const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,      17);
-  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 12);
+  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 13, 6);
 
   const scheduleProducts  = [...new Set(scheduleRows.map(r => r[S.product]).filter(Boolean))].sort();
   const schedulePlanNames = new Set(scheduleRows.map(r => r[S.planName]).filter(Boolean));
@@ -1028,8 +1079,8 @@ function createUsageGuideDoc() {
     ['モック→1st→2ndで時間が減っているか確認', '⑥企画別', '同一企画の累計_モック/1st/2nd列を比較'],
     ['特定ブランドへの年間リソース配分', '⑤ブランド別', 'ブランド名でフィルタして累計工数を縦に追う'],
     ['職人ごとの得意ブランド・企画の傾向', '⑦職人別', '職人名でフィルタして累計工数が多い企画を見る'],
-    ['月ごとの繁忙期・閑散期の把握', '④月次推移', '稼働日数・製造(h)の推移をグラフ化'],
-    ['職人ごとの月間稼働推移', '⑧職人別月次', '職人名でフィルタして実働・製造比率を縦に追う'],
+    ['月ごとの繁忙期・閑散期の把握', '③月別推移', '稼働日数・製造(h)の推移をグラフ化'],
+    ['職人ごとの月間稼働推移', '④職人別月次', '職人名でフィルタして実働・製造比率を縦に追う'],
   ]);
 
   // ===== 日報入力ミスの影響と調べ方 =====

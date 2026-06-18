@@ -295,15 +295,20 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
               <td style="padding:10px 14px;color:#4b5563">サンプル製造のメインフェーズ。日報入力時の「フェーズ 大分類」欄に表示されます。</td>
               <td style="padding:10px 14px;color:#6b7280;font-size:13px">モック / 1st / 2nd / 3rd / 4th / 5th / 最終 / 色増しサンプル / 試験体 / 量産 / エイジングサンプル / 修理 / SOP / 治具</td>
             </tr>
-            <tr>
+            <tr style="border-bottom:1px solid #f3f4f6">
               <td style="padding:10px 14px;font-weight:700">📋 フェーズ中分類管理</td>
               <td style="padding:10px 14px;color:#4b5563">フェーズ内での作業種別。大分類に「中分類あり」をチェックしたフェーズを選んだときだけ入力欄が現れます。</td>
-              <td style="padding:10px 14px;color:#6b7280;font-size:13px">型紙・抜き型作成/修正 / 仮制作（部分サンプル・部分修正）/ 本制作（型修正がない場合）/ 原価表作成・修正 / 工程表作成・修正</td>
+              <td style="padding:10px 14px;color:#6b7280;font-size:13px">型紙作成・修正 / 仮制作（部分サンプル・部分修正）/ 本制作（型修正がない場合）/ 原価表作成・修正 / 工程表作成・修正 / 引き継ぎ / サンプル依頼ミーティング / 裁断確認ミーティング / 製造開発ミーティング / 色増しフィードバックミーティング / 量産フィードバックミーティング / サンプルチェック</td>
+            </tr>
+            <tr>
+              <td style="padding:10px 14px;font-weight:700">📝 その他 種別管理</td>
+              <td style="padding:10px 14px;color:#4b5563">日報入力で「その他」を選んだときの作業種別リスト。追加・修正・削除が自由にできます。</td>
+              <td style="padding:10px 14px;color:#6b7280;font-size:13px">定例ミーティング / その他ミーティング / 事務作業 / 社内行事 / 問い合わせ対応 / 棚卸し / 納品処理 / その他（メモに入れる）</td>
             </tr>
           </tbody>
         </table>
         <div class="tip" style="margin-top:12px">
-          <p>初期値はすでに入っているので追加作業は不要です。フェーズ名を会社独自の呼び方に変更したい場合のみ、設定タブから修正してください。</p>
+          <p>初期値はすでに入っているので追加作業は不要です。各リストの <strong>▲/▼ボタン</strong> で表示順を変更できます。日報入力時のドロップダウンにそのまま反映されます。</p>
         </div>
 
         <div class="point" style="background:#fff8f0;border-color:#f97316;margin-top:16px">
@@ -595,6 +600,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
       <p>モーダルで <strong>「📋 その他」</strong> を選び、作業種別から該当するものを選んでください。</p>
 
       <p style="margin-top:16px;font-weight:700;color:#1a202c">「その他」の作業種別一覧：</p>
+      <p style="font-size:13px;color:#6b7280;margin-bottom:8px">設定タブの「📝 その他 種別管理」から追加・修正・削除・順番変更ができます。</p>
       <table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:14px">
         <thead>
           <tr style="background:#f3f4f6">
@@ -604,8 +610,12 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
         </thead>
         <tbody>
           <tr style="border-bottom:1px solid #f3f4f6">
-            <td style="padding:10px 14px;font-weight:700">サンプル製造以外のMTG・面談・対応</td>
-            <td style="padding:10px 14px;color:#4b5563">評価面談・1on1・部署MTG・全体会議・各種対応</td>
+            <td style="padding:10px 14px;font-weight:700">定例ミーティング</td>
+            <td style="padding:10px 14px;color:#4b5563">部署定例・全体共有・月次MTGなど、サンプルに関係しない定例の会議</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f3f4f6">
+            <td style="padding:10px 14px;font-weight:700">その他ミーティング</td>
+            <td style="padding:10px 14px;color:#4b5563">評価面談・1on1・サンプルに関係しないその他の打合せ・対応</td>
           </tr>
           <tr style="border-bottom:1px solid #f3f4f6">
             <td style="padding:10px 14px;font-weight:700">事務作業</td>
@@ -636,6 +646,39 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
 
       <div class="tip" style="margin-top:16px">
         <p>「サンプル製造に入れるべきか迷う」場合は、<strong>メモ欄に内容を書いて「その他」</strong>に入れてください。あとで集計や分類を見直すときの参考になります。</p>
+      </div>
+
+      <div class="point" style="background:#f0f9ff;border-color:#0BBDC4;margin-top:20px">
+        <div class="point-icon">📌</div>
+        <div>
+          <p style="font-weight:700;margin-bottom:10px">ミーティングの入れ方ルール</p>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead>
+              <tr style="background:#e0f7f8">
+                <th style="padding:8px 12px;text-align:left;border-bottom:2px solid #b0cfd2;color:#0A6B70">内容</th>
+                <th style="padding:8px 12px;text-align:left;border-bottom:2px solid #b0cfd2;color:#0A6B70">入れる場所</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom:1px solid #d6eef0">
+                <td style="padding:8px 12px">サンプルに直接関係する打合せ（依頼・確認・開発・FBなど）</td>
+                <td style="padding:8px 12px;font-weight:700;color:#0A6B70">🧵 サンプル製造 → 該当する中分類を選択</td>
+              </tr>
+              <tr style="border-bottom:1px solid #d6eef0">
+                <td style="padding:8px 12px">引き継ぎ作業</td>
+                <td style="padding:8px 12px;font-weight:700;color:#0A6B70">🧵 サンプル製造 → 中分類「引き継ぎ」</td>
+              </tr>
+              <tr style="border-bottom:1px solid #d6eef0">
+                <td style="padding:8px 12px">定例会議・全体共有・月次MTG</td>
+                <td style="padding:8px 12px;font-weight:700;color:#374151">📋 その他 → 定例ミーティング</td>
+              </tr>
+              <tr>
+                <td style="padding:8px 12px">評価面談・1on1・その他の打合せ</td>
+                <td style="padding:8px 12px;font-weight:700;color:#374151">📋 その他 → その他ミーティング</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>

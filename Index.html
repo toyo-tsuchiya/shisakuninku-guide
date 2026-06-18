@@ -439,6 +439,23 @@ tr:active td{background:#f5fbfb}
     </div>
   </div>
 
+  <div class="card">
+    <div class="card-ttl acc-ttl closed" onclick="toggleAcc(this)">📝 その他 種別管理</div>
+    <div class="acc-body closed">
+      <p class="setting-note">日報入力で「その他」を選んだときに表示される作業種別のリストです。自由に追加・修正・削除できます。</p>
+      <div class="row" style="align-items:flex-end">
+        <div class="fg"><label>種別名</label>
+          <input type="text" id="wt-name" placeholder="例: 面談対応">
+          <input type="hidden" id="wt-edit-orig">
+        </div>
+        <button class="btn btn-mono btn-sm" id="wt-add-btn" onclick="addWorkType()">追加</button>
+        <button class="btn btn-p btn-sm" id="wt-save-btn" style="display:none" onclick="saveWorkTypeEdit()">更新</button>
+        <button class="btn btn-g btn-sm" id="wt-cancel-btn" style="display:none" onclick="cancelWorkTypeEdit()">キャンセル</button>
+      </div>
+      <div id="list-wt" style="margin-top:32px" class="ld">読み込み中...</div>
+    </div>
+  </div>
+
 </div>
 </main>
 
@@ -472,16 +489,7 @@ tr:active td{background:#f5fbfb}
     <div id="modal-other-fields" style="display:none">
       <div class="modal-field">
         <label>作業種別</label>
-        <select id="m-worktype">
-          <option value="">-- 選択 --</option>
-          <option>サンプル製造以外のMTG・面談・対応</option>
-          <option>事務作業</option>
-          <option>社内行事</option>
-          <option>問い合わせ対応（部材確認・荷受けなど）</option>
-          <option>棚卸し</option>
-          <option>納品処理</option>
-          <option>その他（メモに入れる）</option>
-        </select>
+        <select id="m-worktype"><option value="">-- 選択 --</option></select>
       </div>
     </div>
     <div class="modal-field">
@@ -520,7 +528,7 @@ const FIXED_BREAKS = [
 /* ======================== */
 /* 状態                     */
 /* ======================== */
-const S = { craftsmen:[], schedules:[], stages:[], subcats:[] };
+const S = { craftsmen:[], schedules:[], stages:[], subcats:[], workTypes:[] };
 let tlRows          = [];
 let nextId          = 1;
 let colorIdx        = 0;
@@ -544,10 +552,11 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   google.script.run
     .withSuccessHandler(d => {
-      S.craftsmen = d.craftsmen || [];
-      S.schedules = d.schedules || [];
-      S.stages    = d.stages    || [];
-      S.subcats   = d.subcats   || [];
+      S.craftsmen  = d.craftsmen  || [];
+      S.schedules  = d.schedules  || [];
+      S.stages     = d.stages     || [];
+      S.subcats    = d.subcats    || [];
+      S.workTypes  = d.workTypes  || [];
       fillAll();
       renderLists();
     })
@@ -1350,6 +1359,44 @@ function delSchedule(name) { if(!confirm(`「${name}」を削除しますか？`
 function delStage(name)    { if(!confirm(`「${name}」を削除しますか？`))return; google.script.run.withSuccessHandler(r=>{toast(r.message,r.success?'ok':'err');if(r.success)reload();}).deleteStage(name); }
 function delSubcat(name)   { if(!confirm(`「${name}」を削除しますか？`))return; google.script.run.withSuccessHandler(r=>{toast(r.message,r.success?'ok':'err');if(r.success)reload();}).deleteStageSubcat(name); }
 
+function addWorkType() {
+  const name = document.getElementById('wt-name').value.trim();
+  if (!name) { toast('種別名を入力してください','err'); return; }
+  google.script.run
+    .withSuccessHandler(r => { toast(r.message,r.success?'ok':'err'); if(r.success){ document.getElementById('wt-name').value=''; reload(); } })
+    .addWorkType(name);
+}
+function editWorkType(name) {
+  const wt = S.workTypes.find(w => w.name === name);
+  if (!wt) return;
+  document.getElementById('wt-name').value      = wt.name;
+  document.getElementById('wt-edit-orig').value = wt.name;
+  document.getElementById('wt-add-btn').style.display    = 'none';
+  document.getElementById('wt-save-btn').style.display   = '';
+  document.getElementById('wt-cancel-btn').style.display = '';
+  document.getElementById('wt-name').focus();
+}
+function saveWorkTypeEdit() {
+  const orig = document.getElementById('wt-edit-orig').value;
+  const name = document.getElementById('wt-name').value.trim();
+  if (!name) { toast('種別名を入力してください','err'); return; }
+  google.script.run
+    .withSuccessHandler(r => { toast(r.message,r.success?'ok':'err'); if(r.success){ cancelWorkTypeEdit(); reload(); } })
+    .updateWorkType(orig, name);
+}
+function cancelWorkTypeEdit() {
+  document.getElementById('wt-name').value      = '';
+  document.getElementById('wt-edit-orig').value = '';
+  document.getElementById('wt-add-btn').style.display    = '';
+  document.getElementById('wt-save-btn').style.display   = 'none';
+  document.getElementById('wt-cancel-btn').style.display = 'none';
+}
+function delWorkType(name) { if(!confirm(`「${name}」を削除しますか？`))return; google.script.run.withSuccessHandler(r=>{toast(r.message,r.success?'ok':'err');if(r.success)reload();}).deleteWorkType(name); }
+
+function moveStage(name, dir)    { google.script.run.withSuccessHandler(r=>{toast(r.message,r.success?'ok':'err');if(r.success)reload();}).moveStage(name, dir); }
+function moveSubcat(name, dir)   { google.script.run.withSuccessHandler(r=>{toast(r.message,r.success?'ok':'err');if(r.success)reload();}).moveSubcat(name, dir); }
+function moveWorkType(name, dir) { google.script.run.withSuccessHandler(r=>{toast(r.message,r.success?'ok':'err');if(r.success)reload();}).moveWorkType(name, dir); }
+
 function renderLists() {
   document.getElementById('list-c').innerHTML = S.craftsmen.length
     ? mTable(['ID','名前','備考'], S.craftsmen.map(c=>[c.id, `<strong>${esc(c.name)}</strong>`, esc(c.note), `<button class="btn btn-d btn-sm" onclick="delCraftsman('${esc(c.name)}')">削除</button>`]))
@@ -1376,7 +1423,9 @@ function renderLists() {
           i+1,
           `<strong>${esc(s.name)}</strong>`,
           s.hasSub ? '<span class="badge b-bl">あり</span>' : '<span class="badge b-gy">なし</span>',
-          `<button class="btn btn-mono btn-sm" onclick="editStage('${esc(s.name)}')">修正</button>
+          `<button class="btn btn-g btn-sm" onclick="moveStage('${esc(s.name)}',-1)" ${i===0?'disabled':''}>▲</button>
+           <button class="btn btn-g btn-sm" onclick="moveStage('${esc(s.name)}',1)" ${i===S.stages.length-1?'disabled':''}>▼</button>
+           <button class="btn btn-mono btn-sm" onclick="editStage('${esc(s.name)}')">修正</button>
            <button class="btn btn-d btn-sm" onclick="delStage('${esc(s.name)}')">削除</button>`
         ])
       )
@@ -1384,8 +1433,18 @@ function renderLists() {
 
   document.getElementById('list-sc').innerHTML = S.subcats.length
     ? mTable(['順番','中分類名'], S.subcats.map((s,i)=>[i+1, `<strong>${esc(s.name)}</strong>`,
-        `<button class="btn btn-mono btn-sm" onclick="editSubcat('${esc(s.name)}')">修正</button>
+        `<button class="btn btn-g btn-sm" onclick="moveSubcat('${esc(s.name)}',-1)" ${i===0?'disabled':''}>▲</button>
+         <button class="btn btn-g btn-sm" onclick="moveSubcat('${esc(s.name)}',1)" ${i===S.subcats.length-1?'disabled':''}>▼</button>
+         <button class="btn btn-mono btn-sm" onclick="editSubcat('${esc(s.name)}')">修正</button>
          <button class="btn btn-d btn-sm" onclick="delSubcat('${esc(s.name)}')">削除</button>`]))
+    : '<div class="empty">未登録</div>';
+
+  document.getElementById('list-wt').innerHTML = S.workTypes.length
+    ? mTable(['順番','種別名'], S.workTypes.map((w,i)=>[i+1, `<strong>${esc(w.name)}</strong>`,
+        `<button class="btn btn-g btn-sm" onclick="moveWorkType('${esc(w.name)}',-1)" ${i===0?'disabled':''}>▲</button>
+         <button class="btn btn-g btn-sm" onclick="moveWorkType('${esc(w.name)}',1)" ${i===S.workTypes.length-1?'disabled':''}>▼</button>
+         <button class="btn btn-mono btn-sm" onclick="editWorkType('${esc(w.name)}')">修正</button>
+         <button class="btn btn-d btn-sm" onclick="delWorkType('${esc(w.name)}')">削除</button>`]))
     : '<div class="empty">未登録</div>';
 }
 
@@ -1400,9 +1459,10 @@ function mTable(headers, rows) {
 /* セレクト補充             */
 /* ======================== */
 function fillAll() {
-  fill('r-who',   S.craftsmen.map(c=>c.name), '-- 選択 --');
-  fill('m-prod',  S.schedules.map(s=>s.name), '-- 選択 --');
-  fill('m-stage', S.stages.map(s=>s.name),    '-- 選択 --');
+  fill('r-who',      S.craftsmen.map(c=>c.name),  '-- 選択 --');
+  fill('m-prod',     S.schedules.map(s=>s.name),  '-- 選択 --');
+  fill('m-stage',    S.stages.map(s=>s.name),     '-- 選択 --');
+  fill('m-worktype', S.workTypes.map(w=>w.name),  '-- 選択 --');
 }
 
 function fill(id, items, placeholder) {
@@ -1417,7 +1477,7 @@ function fill(id, items, placeholder) {
 function reload() {
   google.script.run
     .withSuccessHandler(d => {
-      S.craftsmen = d.craftsmen||[]; S.schedules = d.schedules||[]; S.stages = d.stages||[]; S.subcats = d.subcats||[];
+      S.craftsmen = d.craftsmen||[]; S.schedules = d.schedules||[]; S.stages = d.stages||[]; S.subcats = d.subcats||[]; S.workTypes = d.workTypes||[];
       fillAll(); renderLists();
     })
     .getInitialData();

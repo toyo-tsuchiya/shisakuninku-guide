@@ -7,6 +7,7 @@ const SHEETS = {
   SCHEDULES:     'スケジュール',
   STAGES:        'ステージ',
   STAGE_SUBCATS: 'フェーズ中分類',
+  WORK_TYPES:    'その他種別',
   LOGS:          '日報ログ'
 };
 
@@ -78,11 +79,37 @@ function setup() {
     s.appendRow(['ID', '中分類名', '順番']);
     header(s, 3);
     [
-      ['SC1', '型紙・抜き型作成/修正',            1],
-      ['SC2', '仮制作（部分サンプル・部分修正）', 2],
-      ['SC3', '本制作（型修正がない場合）',       3],
-      ['SC4', '原価表作成・修正',                4],
-      ['SC5', '工程表作成・修正',                5],
+      ['SC1',  '型紙作成・修正',                  1],
+      ['SC2',  '仮制作（部分サンプル・部分修正）', 2],
+      ['SC3',  '本制作（型修正がない場合）',       3],
+      ['SC4',  '原価表作成・修正',                4],
+      ['SC5',  '工程表作成・修正',                5],
+      ['SC6',  '引き継ぎ',                        6],
+      ['SC7',  'サンプル依頼ミーティング',         7],
+      ['SC8',  '裁断確認ミーティング',             8],
+      ['SC9',  '製造開発ミーティング',             9],
+      ['SC10', '色増しフィードバックミーティング', 10],
+      ['SC11', '量産フィードバックミーティング',   11],
+      ['SC12', 'サンプルチェック',                12],
+    ].forEach(r => s.appendRow(r));
+  } else {
+    migrateSubcats_(s);
+  }
+
+  // その他種別マスター
+  s = getOrCreate(ss, SHEETS.WORK_TYPES);
+  if (s.getLastRow() === 0) {
+    s.appendRow(['ID', '種別名', '順番']);
+    header(s, 3);
+    [
+      ['WT1', '定例ミーティング',                    1],
+      ['WT2', 'その他ミーティング',                  2],
+      ['WT3', '事務作業',                            3],
+      ['WT4', '社内行事',                            4],
+      ['WT5', '問い合わせ対応（部材確認・荷受けなど）', 5],
+      ['WT6', '棚卸し',                              6],
+      ['WT7', '納品処理',                            7],
+      ['WT8', 'その他（メモに入れる）',               8],
     ].forEach(r => s.appendRow(r));
   }
 
@@ -109,6 +136,39 @@ function setup() {
   return { success: true, message: 'セットアップ完了しました。' };
 }
 
+// 中分類マイグレーション（GASエディタからも手動で実行可）
+function migrateSubcats() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  migrateSubcats_(ss.getSheetByName(SHEETS.STAGE_SUBCATS));
+}
+function migrateSubcats_(s) {
+  const lastRow = s.getLastRow();
+  if (lastRow <= 1) return;
+  const data = s.getRange(2, 2, lastRow - 1, 1).getValues().map(r => r[0]);
+
+  // 旧名称のリネーム
+  const idx = data.indexOf('型紙・抜き型作成/修正');
+  if (idx !== -1) s.getRange(idx + 2, 2).setValue('型紙作成・修正');
+
+  // 不足している中分類を末尾に追加
+  const toAdd = [
+    '引き継ぎ',
+    'サンプル依頼ミーティング',
+    '裁断確認ミーティング',
+    '製造開発ミーティング',
+    '色増しフィードバックミーティング',
+    '量産フィードバックミーティング',
+    'サンプルチェック',
+  ];
+  let order = lastRow;
+  toAdd.forEach(name => {
+    if (!data.includes(name)) {
+      s.appendRow(['SC' + order, name, order]);
+      order++;
+    }
+  });
+}
+
 // ヘッダー修正用（一度だけ実行してください）
 function fixLogHeaders() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -131,11 +191,22 @@ function fixLogHeaders() {
 function getInitialData() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   return {
-    craftsmen: getCraftsmen(ss),
-    schedules: getSchedules(ss),
-    stages:    getStages(ss),
-    subcats:   getStageSubcats(ss)
+    craftsmen:  getCraftsmen(ss),
+    schedules:  getSchedules(ss),
+    stages:     getStages(ss),
+    subcats:    getStageSubcats(ss),
+    workTypes:  getWorkTypes(ss)
   };
+}
+
+function getWorkTypes(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  const s = ss.getSheetByName(SHEETS.WORK_TYPES);
+  if (!s || s.getLastRow() <= 1) return [];
+  return s.getRange(2, 1, s.getLastRow()-1, 3).getValues()
+    .filter(r => r[1])
+    .sort((a,b) => a[2]-b[2])
+    .map(r => ({ id:r[0], name:r[1], order:r[2] }));
 }
 
 function getCraftsmen(ss) {
@@ -312,6 +383,49 @@ function updateStageSubcat(origName, name) {
   if (!name) return { success:false, message:'中分類名を入力してください。' };
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const s  = ss.getSheetByName(SHEETS.STAGE_SUBCATS);
+  if (!s || s.getLastRow() <= 1) return { success:false, message:'データがありません。' };
+  const data = s.getRange(2, 2, s.getLastRow()-1, 1).getValues();
+  const idx  = data.findIndex(r => r[0] === origName);
+  if (idx === -1) return { success:false, message:`「${origName}」が見つかりません。` };
+  s.getRange(idx+2, 2).setValue(name);
+  return { success:true, message:`「${name}」を更新しました。` };
+}
+
+function moveStage(name, dir)    { return moveItem_(SHEETS.STAGES,        2, 3, name, dir); }
+function moveSubcat(name, dir)   { return moveItem_(SHEETS.STAGE_SUBCATS, 2, 3, name, dir); }
+function moveWorkType(name, dir) { return moveItem_(SHEETS.WORK_TYPES,    2, 3, name, dir); }
+function moveItem_(sheetName, nameCol, orderCol, name, dir) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const s  = ss.getSheetByName(sheetName);
+  if (!s || s.getLastRow() <= 1) return { success:false, message:'データがありません。' };
+  const data  = s.getRange(2, 1, s.getLastRow()-1, orderCol).getValues();
+  const items = data.map((r,i) => ({ row:i+2, name:r[nameCol-1], order:Number(r[orderCol-1]) }))
+                    .filter(r => r.name)
+                    .sort((a,b) => a.order - b.order);
+  const idx = items.findIndex(r => r.name === name);
+  if (idx === -1) return { success:false, message:`「${name}」が見つかりません。` };
+  const swapIdx = idx + dir;
+  if (swapIdx < 0 || swapIdx >= items.length) return { success:false, message:'移動できません。' };
+  const tmp = items[idx].order;
+  s.getRange(items[idx].row,   orderCol).setValue(items[swapIdx].order);
+  s.getRange(items[swapIdx].row, orderCol).setValue(tmp);
+  return { success:true, message:'順番を変更しました。' };
+}
+
+function addWorkType(name) {
+  if (!name) return { success:false, message:'種別名を入力してください。' };
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const s  = ss.getSheetByName(SHEETS.WORK_TYPES);
+  if (!s) return { success:false, message:'シートが見つかりません。初期設定を実行してください。' };
+  const order = s.getLastRow();
+  s.appendRow(['WT'+order, name, order]);
+  return { success:true, message:`種別「${name}」を追加しました。` };
+}
+function deleteWorkType(name) { return delRow(SHEETS.WORK_TYPES, 2, name); }
+function updateWorkType(origName, name) {
+  if (!name) return { success:false, message:'種別名を入力してください。' };
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const s  = ss.getSheetByName(SHEETS.WORK_TYPES);
   if (!s || s.getLastRow() <= 1) return { success:false, message:'データがありません。' };
   const data = s.getRange(2, 2, s.getLastRow()-1, 1).getValues();
   const idx  = data.findIndex(r => r[0] === origName);

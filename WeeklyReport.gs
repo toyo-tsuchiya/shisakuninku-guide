@@ -47,12 +47,10 @@ const S = {
 function generateWeeklyReport() {
   const { startDate, endDate } = getWeekRange();
   const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       18);
-  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
   const reportSS     = getOrCreateReportSS();
 
   appendToWeeklyTrend(reportSS, logRows, startDate, endDate);
   appendToWorkerWeekly(reportSS, logRows, startDate, endDate);
-  overwriteProjectProgress(reportSS, logRows, scheduleRows);
 
   Logger.log('週次レポート更新完了: ' + reportSS.getUrl());
 }
@@ -174,86 +172,6 @@ function appendToWorkerWeekly(reportSS, logRows, startDate, endDate) {
   }
 }
 
-// ================================================================
-// ③ 案件進捗（毎週上書き・全案件累計）
-// ================================================================
-function overwriteProjectProgress(reportSS, logRows, scheduleRows) {
-  const HEADERS = ['製品名', '企画名', 'ステータス', 'フェーズ', '累計工数(h)', '累計労務費(円)', '納品希望日', '残日数'];
-  const sheet = getOrInitSheet(reportSS, '⑦製品別進捗', HEADERS, '#34A853');
-
-  const lastRow = sheet.getLastRow();
-  if (lastRow > 1) {
-    sheet.getRange(2, 1, lastRow - 1, HEADERS.length).clearContent();
-    if (lastRow > 2) sheet.deleteRows(3, lastRow - 2);
-  }
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const EXCLUDE_STATUSES = ['完了', '中断'];
-  const activeSchedules = scheduleRows.filter(s => !EXCLUDE_STATUSES.includes(String(s[S.status] || '').trim()));
-
-  const productMap    = new Map();
-  const planToProduct = new Map();
-  for (const sched of activeSchedules) {
-    const product  = sched[S.product];
-    const planName = sched[S.planName];
-    if (!product) continue;
-    if (!productMap.has(product)) productMap.set(product, []);
-    productMap.get(product).push(sched);
-    if (planName && planName !== product && !planToProduct.has(planName)) {
-      planToProduct.set(planName, product);
-    }
-  }
-
-  const sampleLogs = logRows.filter(r => r[L.type] === 'サンプル製造');
-  const rows = [];
-
-  for (const [productName, scheds] of productMap) {
-
-    const planName       = scheds[0][S.planName] || '';
-    const statuses       = [...new Set(scheds.map(s => String(s[S.status] || '').trim()).filter(Boolean))].join('・') || '-';
-    const phases         = [...new Set(scheds.map(s => s[S.phase]).filter(Boolean))].join('・') || '-';
-    const schedPlanNames = new Set(scheds.map(s => s[S.planName]).filter(Boolean));
-
-    const delivDates   = scheds.map(s => toDate(s[S.deliveryDate])).filter(Boolean);
-    const deliveryDate = delivDates.length ? new Date(Math.min(...delivDates)) : null;
-    const remainDays   = deliveryDate ? Math.ceil((deliveryDate - today) / 86400000) : '-';
-
-    const matched = sampleLogs.filter(r => {
-      const lp    = r[L.product];
-      const lplan = r[L.planName];
-      return lp === productName || planToProduct.get(lp) === productName || (lplan && schedPlanNames.has(lplan));
-    });
-
-    const totalMin  = colSum(matched, L.workMin);
-    const totalCost = colSum(matched, L.laborCost);
-
-    rows.push([
-      productName, planName, statuses, phases,
-      totalMin  > 0 ? +(totalMin  / 60).toFixed(1) : '',
-      totalCost > 0 ? totalCost : '',
-      deliveryDate ? dFmt(deliveryDate) : '-', remainDays,
-    ]);
-  }
-
-  if (rows.length > 0) {
-    sheet.getRange(2, 1, rows.length, HEADERS.length).setValues(rows);
-    sheet.getRange(2, 6, rows.length, 1).setNumberFormat('#,##0');
-
-    for (let i = 0; i < rows.length; i++) {
-      const remain = rows[i][7];
-      if (remain === '-' || remain === '') continue;
-      const cell = sheet.getRange(i + 2, 8);
-      if      (remain <= 3) cell.setFontColor('#D32F2F').setFontWeight('bold');
-      else if (remain <= 7) cell.setFontColor('#F57C00');
-    }
-  }
-
-  sheet.setFrozenRows(1);
-  sheet.autoResizeColumns(1, HEADERS.length);
-  Logger.log('③製品別進捗 更新完了（' + rows.length + '件）');
-}
 
 // ================================================================
 // 月次メイン（毎月1日 朝7時に自動実行）
@@ -667,14 +585,14 @@ function appendToWorkerDetailReport(reportSS, logRows, scheduleRows, startDate, 
 }
 
 // ================================================================
-// ⑧ 職人別月次（月次追記型）②職人別週次の月次版
+// ④ 職人別月次（月次追記型）②職人別週次の月次版
 // ================================================================
 function appendToWorkerMonthly(reportSS, logRows, startDate, endDate, label) {
   const HEADERS = ['年月', '職人名', '稼働日数', '実働(h)', '製造(h)', '間接(h)', '製造比率(%)', '労務費(円)'];
   const sheet = getOrInitSheet(reportSS, '④職人別月次', HEADERS, '#4DD0E1');
 
   if (labelExists(sheet, label)) {
-    Logger.log('⑧職人別月次: ' + label + ' 既存 → スキップ');
+    Logger.log('④職人別月次: ' + label + ' 既存 → スキップ');
     return;
   }
 
@@ -718,7 +636,7 @@ function appendToWorkerMonthly(reportSS, logRows, startDate, endDate, label) {
 
   sheet.setFrozenRows(1);
   sheet.autoResizeColumns(1, HEADERS.length);
-  Logger.log('⑧職人別月次 追記完了（' + newRows.length + '件 / ' + label + '）');
+  Logger.log('④職人別月次 追記完了（' + newRows.length + '件 / ' + label + '）');
 }
 
 // ================================================================
@@ -734,7 +652,6 @@ function generateWeeklyReportBackfill() {
   today.setHours(0, 0, 0, 0);
 
   const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       18);
-  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
   const reportSS     = getOrCreateReportSS();
 
   let current = new Date(startDate);
@@ -757,9 +674,6 @@ function generateWeeklyReportBackfill() {
     count++;
   }
 
-  // 案件進捗は最後に1回だけ更新
-  overwriteProjectProgress(reportSS, logRows, scheduleRows);
-
   Logger.log('バックフィル完了: ' + count + '週分 → ' + reportSS.getUrl());
 }
 
@@ -768,7 +682,7 @@ function generateWeeklyReportBackfill() {
 // ================================================================
 function reorderSheets() {
   const ss = getOrCreateReportSS();
-  const order = ['①週次推移', '②職人別週次', '③月別推移', '④職人別月次', '⑤ブランド別', '⑥企画別', '⑦製品別進捗'];
+  const order = ['①週次推移', '②職人別週次', '③月別推移', '④職人別月次', '⑤ブランド別', '⑥企画別'];
   order.forEach((name, i) => {
     const sheet = ss.getSheetByName(name);
     if (sheet) { ss.setActiveSheet(sheet); ss.moveActiveSheet(i + 1); }
@@ -776,15 +690,6 @@ function reorderSheets() {
   Logger.log('シート並び替え完了');
 }
 
-// ================================================================
-// ③案件進捗を単体で更新するラッパー
-// ================================================================
-function runProjectProgress() {
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,      18);
-  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 13, 6);
-  const reportSS     = getOrCreateReportSS();
-  overwriteProjectProgress(reportSS, logRows, scheduleRows);
-}
 
 // ================================================================
 // undefined行クリーンアップ（引数なし誤実行で生じた不正行を削除）
@@ -809,7 +714,7 @@ function cleanupUndefinedRows() {
   Logger.log('クリーンアップ完了');
 }
 
-// 2026年05月の月次を⑧だけ再生成するラッパー（⑧が空の場合に1回だけ実行）
+// 2026年05月の月次を④だけ再生成するラッパー（④が空の場合に1回だけ実行）
 function run202605() { generateMonthlyReportForMonth(2026, 5); }
 
 // ================================================================
@@ -1057,16 +962,7 @@ function createUsageGuideDoc() {
     ['稼働日数', '有休・欠勤の把握'],
   ]);
 
-  addHeading('③ 案件進捗（緑タブ）', H2);
-  addText('現在進行中の全案件の状態（毎週上書き）。スケジュールの全製品に対して累計工数・残日数・担当者を自動更新。');
-  addTable([
-    ['見るポイント', '活用例'],
-    ['残日数（赤字/橙字）', '3日以内：赤、7日以内：橙。週次ミーティングの優先議題に'],
-    ['累計工数', '想定より多い案件は遅延・手戻りのサイン'],
-    ['ステータス', '「完了」になっているのに工数が増えていないか確認'],
-  ]);
-
-  addHeading('④ 月次推移（黄タブ）', H2);
+  addHeading('③ 月別推移（黄タブ）', H2);
   addText('試作課全体の月まとめ（1行/月で蓄積）。上長向け月次報告の数字がそのまま読み取れる。');
   addTable([
     ['見るポイント', '活用例'],
@@ -1105,7 +1001,7 @@ function createUsageGuideDoc() {
     ['職人名でフィルタ', '「この職人は今月どの仕事をしていたか」がわかる'],
   ]);
 
-  addHeading('⑧ 職人別月次（青緑タブ）', H2);
+  addHeading('④ 職人別月次（青緑タブ）', H2);
   addText('職人ごとの月まとめ（1行/職人×月）。②職人別週次の月次集計版。月次報告での職人別実績に使える。');
   addTable([
     ['見るポイント', '活用例'],
@@ -1132,12 +1028,12 @@ function createUsageGuideDoc() {
   addHeading('よくある入力ミスとその影響', H3);
   addTable([
     ['入力ミス', '影響するシート', '具体的な症状'],
-    ['製品名の表記ゆれ（スペース・全角半角など）', '③⑤⑥⑦', 'その製品の工数が「未紐付け」に入る。③案件進捗の累計工数が0のまま'],
-    ['種別（サンプル製造/その他）の選び間違い', '①②④⑧', '製造比率が実態と合わなくなる'],
+    ['製品名の表記ゆれ（スペース・全角半角など）', '⑤⑥', 'その製品の工数が「未紐付け」に入る'],
+    ['種別（サンプル製造/その他）の選び間違い', '①②③④', '製造比率が実態と合わなくなる'],
     ['フェーズの入力ミス', '⑥', 'フェーズ別累計の数字が実態と合わなくなる'],
     ['作業時間の入力ミス（分単位）', '全シート', '工数・労務費がすべてズレる'],
-    ['企画名が空欄', '⑥⑦', 'その企画への工数が集計されない'],
-    ['職人名の表記ゆれ', '②⑦⑧', '同一人物が別人として2行で集計される'],
+    ['企画名が空欄', '⑥', 'その企画への工数が集計されない'],
+    ['職人名の表記ゆれ', '②④', '同一人物が別人として2行で集計される'],
   ]);
 
   addHeading('調べ方（GASエディタから実行）', H3);
@@ -1150,7 +1046,7 @@ function createUsageGuideDoc() {
 
   addHeading('入力ミスを見つけたら', H3);
   addText('1. 日報ログSSの該当行を直接修正する');
-  addText('2. 集計レポートSSの該当月シート（④⑤⑥⑦⑧）の該当月行を削除する');
+  addText('2. 集計レポートSSの該当月シート（③④⑤⑥）の該当月行を削除する');
   addText('3. GASエディタで generateMonthlyReport を再実行して再集計する');
 
   // ===== 各シートの列定義と計算式 =====
@@ -1202,25 +1098,7 @@ function createUsageGuideDoc() {
     ['労務費(円)', 'その職人の期間内の労務費合計'],
   ]);
 
-  addHeading('③ 案件進捗', H3);
-  addText('毎週上書き。スケジュールSSに登録されている全製品が対象。');
-  addTable([
-    ['列名', '計算内容'],
-    ['製品名', 'スケジュールSSから取得'],
-    ['フェーズ', 'スケジュールSSの「サンプルフェーズ」列から取得（複数あれば「・」区切り）'],
-    ['企画名', 'スケジュールSSから取得'],
-    ['ブランド', 'スケジュールSSから取得'],
-    ['納品希望日', 'スケジュールSSから取得（複数行ある場合は最も早い日付）'],
-    ['残日数', '納品希望日 − 今日（マイナスは納期超過）※3日以内：赤、7日以内：橙'],
-    ['計画開始', 'スケジュールSSの試作開始日（複数行の最も早い日付）'],
-    ['計画完了', 'スケジュールSSの試作完了日（複数行の最も遅い日付）'],
-    ['累計工数(h)', '日報ログで同製品・同企画に紐づいた全期間の作業時間(分)合計 ÷ 60'],
-    ['累計労務費(円)', '同上の労務費合計'],
-    ['担当者（全期間）', '累計で関わった職人名（「、」区切り）'],
-    ['ステータス', 'スケジュールSSのステータス列から取得'],
-  ]);
-
-  addHeading('④ 月次推移', H3);
+  addHeading('③ 月別推移', H3);
   addText('対象月の1日〜末日を集計（①の月次版）。');
   addTable([
     ['列名', '計算内容'],
@@ -1294,7 +1172,7 @@ function createUsageGuideDoc() {
     ['累計労務費(円)', '全期間の労務費合計'],
   ]);
 
-  addHeading('⑧ 職人別月次', H3);
+  addHeading('④ 職人別月次', H3);
   addText('月次追記。職人ごとに1行（月内に日報を提出した職人のみ）。');
   addTable([
     ['列名', '計算内容'],

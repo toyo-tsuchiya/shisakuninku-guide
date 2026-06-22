@@ -197,6 +197,7 @@ function generateMonthlyReportForMonth(year, month) {
   appendToMonthlyTrend(reportSS, logRows, startDate, endDate, label);
   appendToBrandReport(reportSS, logRows, scheduleRows, startDate, endDate, label);
   appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDate, label);
+  appendToProductWorkerReport(reportSS, logRows, scheduleRows, startDate, endDate, label);
   appendToWorkerMonthly(reportSS, logRows, startDate, endDate, label);
 
   Logger.log(label + ' 月次レポート完了: ' + reportSS.getUrl());
@@ -506,7 +507,84 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
 }
 
 // ================================================================
-// ⑦ 職人別ブランド×企画（月次追記型・月内 + 累計）「誰がどの事業・企画に」
+// ⑦ 製品×職人別（月次追記型・月内 + 累計）「誰がどの製品のどのフェーズに何時間」
+// ================================================================
+function appendToProductWorkerReport(reportSS, logRows, scheduleRows, startDate, endDate, label) {
+  const PHASE_KEYS = ['モック', '1st', '2nd', '3rd'];
+  const HEADERS = [
+    '年月', '企画名', '製品名', '職人名',
+    '月内工数(h)', '月内労務費(円)', '累計工数(h)', '累計労務費(円)',
+    ...PHASE_KEYS.map(p => '月内_' + p + '(h)'), '月内_その他(h)',
+    ...PHASE_KEYS.map(p => '累計_' + p + '(h)'), '累計_その他(h)',
+  ];
+  const sheet = getOrInitSheet(reportSS, '⑦製品×職人別', HEADERS, '#FF7043');
+
+  if (labelExists(sheet, label)) {
+    Logger.log('⑦製品×職人別: ' + label + ' 既存 → スキップ');
+    return;
+  }
+
+  const productPlanMap = new Map();
+  for (const s of scheduleRows) {
+    const plan = s[S.planName] || '';
+    const prod = s[S.product]  || '';
+    if (prod && plan) productPlanMap.set(prod, plan);
+  }
+
+  const allSampleLogs   = logRows.filter(r => r[L.type] === 'サンプル製造');
+  const monthSampleLogs = allSampleLogs.filter(r => { const d = toDate(r[L.date]); return d && d >= startDate && d <= endDate; });
+
+  function buildMap(rows) {
+    const map = new Map();
+    for (const r of rows) {
+      const product = r[L.product] || '';
+      const worker  = r[L.worker]  || '';
+      if (!product || !worker) continue;
+      const key = product + '\t' + worker;
+      if (!map.has(key)) map.set(key, { workMin: 0, cost: 0, phaseMin: new Map() });
+      const e = map.get(key);
+      e.workMin += Number(r[L.workMin])   || 0;
+      e.cost    += Number(r[L.laborCost]) || 0;
+      const ph = r[L.phase] || '';
+      const pk = PHASE_KEYS.includes(ph) ? ph : 'その他';
+      e.phaseMin.set(pk, (e.phaseMin.get(pk) || 0) + (Number(r[L.workMin]) || 0));
+    }
+    return map;
+  }
+
+  const monthMap = buildMap(monthSampleLogs);
+  const allMap   = buildMap(allSampleLogs);
+
+  const newRows = [...monthMap.keys()]
+    .sort((a, b) => a.localeCompare(b, 'ja'))
+    .map(key => {
+      const [product, worker] = key.split('\t');
+      const month = monthMap.get(key);
+      const all   = allMap.get(key) || { workMin: 0, cost: 0, phaseMin: new Map() };
+      const monthPhaseCols = [...PHASE_KEYS, 'その他'].map(ph => { const m = month.phaseMin.get(ph) || 0; return m > 0 ? +(m / 60).toFixed(1) : ''; });
+      const allPhaseCols   = [...PHASE_KEYS, 'その他'].map(ph => { const m = all.phaseMin.get(ph)   || 0; return m > 0 ? +(m / 60).toFixed(1) : ''; });
+      return [
+        label, productPlanMap.get(product) || '', product, worker,
+        month.workMin > 0 ? +(month.workMin / 60).toFixed(1) : '', month.cost > 0 ? month.cost : '',
+        all.workMin   > 0 ? +(all.workMin   / 60).toFixed(1) : '', all.cost   > 0 ? all.cost   : '',
+        ...monthPhaseCols, ...allPhaseCols,
+      ];
+    });
+
+  if (newRows.length > 0) {
+    const insertRow = sheet.getLastRow() + 1;
+    sheet.getRange(insertRow, 1, newRows.length, HEADERS.length).setValues(newRows);
+    sheet.getRange(insertRow, 6, newRows.length, 1).setNumberFormat('#,##0');
+    sheet.getRange(insertRow, 8, newRows.length, 1).setNumberFormat('#,##0');
+  }
+
+  sheet.setFrozenRows(1);
+  sheet.autoResizeColumns(1, HEADERS.length);
+  Logger.log('⑦製品×職人別 追記完了（' + newRows.length + '件 / ' + label + '）');
+}
+
+// ================================================================
+// ⑦（旧） 職人別ブランド×企画（月次追記型・月内 + 累計）「誰がどの事業・企画に」
 // ================================================================
 function appendToWorkerDetailReport(reportSS, logRows, scheduleRows, startDate, endDate, label) {
   const HEADERS = ['年月', '職人名', 'ブランド', '企画名', '月内工数(h)', '月内労務費(円)', '累計工数(h)', '累計労務費(円)'];
@@ -682,7 +760,7 @@ function generateWeeklyReportBackfill() {
 // ================================================================
 function reorderSheets() {
   const ss = getOrCreateReportSS();
-  const order = ['①週次推移', '②職人別週次', '③月別推移', '④職人別月次', '⑤ブランド別', '⑥企画別'];
+  const order = ['①週次推移', '②職人別週次', '③月別推移', '④職人別月次', '⑤ブランド別', '⑥企画別', '⑦製品×職人別'];
   order.forEach((name, i) => {
     const sheet = ss.getSheetByName(name);
     if (sheet) { ss.setActiveSheet(sheet); ss.moveActiveSheet(i + 1); }
@@ -716,6 +794,25 @@ function cleanupUndefinedRows() {
 
 // 2026年05月の月次を④だけ再生成するラッパー（④が空の場合に1回だけ実行）
 function run202605() { generateMonthlyReportForMonth(2026, 5); }
+
+// ⑦製品×職人別を単月だけ試し生成するラッパー
+function runProductWorker202605() {
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       18);
+  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
+  const reportSS     = getOrCreateReportSS();
+  const startDate    = new Date(2026, 4,  1,  0,  0,  0,   0);
+  const endDate      = new Date(2026, 5,  0, 23, 59, 59, 999);
+  appendToProductWorkerReport(reportSS, logRows, scheduleRows, startDate, endDate, '2026年05月');
+}
+
+function runProductWorker202606() {
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       18);
+  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
+  const reportSS     = getOrCreateReportSS();
+  const startDate    = new Date(2026, 5,  1,  0,  0,  0,   0);
+  const endDate      = new Date(2026, 6,  0, 23, 59, 59, 999);
+  appendToProductWorkerReport(reportSS, logRows, scheduleRows, startDate, endDate, '2026年06月');
+}
 
 // ================================================================
 // トリガー設定

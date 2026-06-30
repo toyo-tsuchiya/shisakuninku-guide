@@ -211,7 +211,9 @@ function appendToWeeklyTrend(reportSS, logRows, startDate, endDate) {
     mfgRatio, productCount, totalCost,
   ]);
 
-  sheet.getRange(sheet.getLastRow(), 12).setNumberFormat('#,##0');
+  const lastRow1 = sheet.getLastRow();
+  sheet.getRange(lastRow1, 12).setNumberFormat('#,##0');
+  applyMfgRatioColor(sheet.getRange(lastRow1, 10), mfgRatio);
 }
 
 // ================================================================
@@ -270,6 +272,9 @@ function appendToWorkerWeekly(reportSS, logRows, startDate, endDate) {
     sheet.getRange(insertRow, 1, newRows.length, HEADERS.length).setValues(newRows);
     sheet.getRange(insertRow, 9, newRows.length, 1).setNumberFormat('#,##0');
     sheet.getRange(insertRow, 1, newRows.length, HEADERS.length).setBackground(bgColor);
+
+    // 製造比率(%)列（8列目）に色付け
+    newRows.forEach((r, i) => applyMfgRatioColor(sheet.getRange(insertRow + i, 8), r[7]));
   }
 }
 
@@ -306,6 +311,39 @@ function colorWorkerWeeklySheet() {
   sheet.getRange(groupStart, 1, lastRow - groupStart + 1, numCols).setBackground(bg);
 
   Logger.log('②職人別週次 色分け完了: ' + (weekIndex + 1) + '週分');
+}
+
+// ================================================================
+// 製造比率(%)セルに色付け（共通ヘルパー）
+// ================================================================
+function applyMfgRatioColor(cell, ratio) {
+  const r = Number(ratio) || 0;
+  if      (r >= 70) cell.setFontColor('#2E7D32').setFontWeight('bold');
+  else if (r >= 50) cell.setFontColor('#F57C00').setFontWeight('bold');
+  else              cell.setFontColor('#C62828').setFontWeight('bold');
+}
+
+// ================================================================
+// 製造比率(%)色分けを全シートの既存データに一括適用（1回のみ実行）
+// 対象: ①週次推移(10列目)、②職人別週次(8列目)、③月別推移(7列目)、④職人別月次(7列目)
+// ================================================================
+function colorMfgRatioAllSheets() {
+  const ss = getOrCreateReportSS();
+  const targets = [
+    { name: '①週次推移',   col: 10 },
+    { name: '②職人別週次', col: 8  },
+    { name: '③月別推移',   col: 7  },
+    { name: '④職人別月次', col: 7  },
+  ];
+
+  targets.forEach(({ name, col }) => {
+    const sheet = ss.getSheetByName(name);
+    if (!sheet || sheet.getLastRow() <= 1) return;
+    const lastRow = sheet.getLastRow();
+    const vals = sheet.getRange(2, col, lastRow - 1, 1).getValues();
+    vals.forEach((r, i) => applyMfgRatioColor(sheet.getRange(i + 2, col), r[0]));
+    Logger.log(name + ' 製造比率 色分け完了: ' + (lastRow - 1) + '行');
+  });
 }
 
 // ================================================================
@@ -390,10 +428,7 @@ function appendToMonthlyTrend(reportSS, logRows, startDate, endDate, label) {
   const lastRow   = sheet.getLastRow();
   sheet.getRange(lastRow, 11).setNumberFormat('#,##0');
 
-  const ratioCell = sheet.getRange(lastRow, 7);
-  if      (mfgRatio >= 70) ratioCell.setFontColor('#2E7D32').setFontWeight('bold');
-  else if (mfgRatio >= 50) ratioCell.setFontColor('#F57C00').setFontWeight('bold');
-  else                     ratioCell.setFontColor('#C62828').setFontWeight('bold');
+  applyMfgRatioColor(sheet.getRange(lastRow, 7), mfgRatio);
 }
 
 // ================================================================
@@ -845,6 +880,8 @@ function appendToWorkerMonthly(reportSS, logRows, startDate, endDate, label) {
     const insertRow = sheet.getLastRow() + 1;
     sheet.getRange(insertRow, 1, newRows.length, HEADERS.length).setValues(newRows);
     sheet.getRange(insertRow, 8, newRows.length, 1).setNumberFormat('#,##0');
+    // 製造比率(%)列（7列目）に色付け
+    newRows.forEach((r, i) => applyMfgRatioColor(sheet.getRange(insertRow + i, 7), r[6]));
   }
 
   sheet.setFrozenRows(1);

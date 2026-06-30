@@ -51,8 +51,101 @@ function generateWeeklyReport() {
 
   appendToWeeklyTrend(reportSS, logRows, startDate, endDate);
   appendToWorkerWeekly(reportSS, logRows, startDate, endDate);
+  archiveCompletedSchedules();
 
   Logger.log('週次レポート更新完了: ' + reportSS.getUrl());
+}
+
+// ================================================================
+// 完了製品の自動アーカイブ（週次実行）
+// スケジュールSSで全行のステータスが「完了」の製品をアプリのリストから削除する
+// ================================================================
+function archiveCompletedSchedules() {
+  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 13, 6);
+
+  // 外部SSで製品名ごとのステータスを集計
+  const productStatuses = new Map();
+  for (const r of scheduleRows) {
+    const product = String(r[S.product] || '').trim();
+    const status  = String(r[S.status]  || '').trim();
+    if (!product) continue;
+    if (!productStatuses.has(product)) productStatuses.set(product, []);
+    productStatuses.get(product).push(status);
+  }
+
+  // 全行が「完了」または「中断」の製品のみ削除対象（1行でも進行中のステータスがあれば残す）
+  const ARCHIVE_STATUSES = new Set(['完了', '中断']);
+  const completed = new Set(
+    [...productStatuses.entries()]
+      .filter(([, statuses]) => statuses.length > 0 && statuses.every(s => ARCHIVE_STATUSES.has(s)))
+      .map(([product]) => product)
+  );
+
+  if (completed.size === 0) {
+    Logger.log('archiveCompletedSchedules: 削除対象なし');
+    return;
+  }
+
+  // アプリのスケジュールシートから該当製品を削除
+  const appSheet = SpreadsheetApp.openById(REPORT_CONFIG.logSSId).getSheetByName('スケジュール');
+  if (!appSheet || appSheet.getLastRow() <= 1) return;
+
+  const data = appSheet.getRange(2, 2, appSheet.getLastRow() - 1, 1).getValues();
+  const toDelete = data
+    .map((r, i) => ({ row: i + 2, name: String(r[0] || '').trim() }))
+    .filter(({ name }) => completed.has(name))
+    .map(({ row }) => row);
+
+  if (toDelete.length === 0) {
+    Logger.log('archiveCompletedSchedules: 削除対象なし（アプリ側に該当製品なし）');
+    return;
+  }
+
+  // 後ろから削除（行ずれ防止）
+  toDelete.reverse().forEach(row => appSheet.deleteRow(row));
+  Logger.log('archiveCompletedSchedules 削除完了: ' + toDelete.length + '件 → ' + [...completed].join('、'));
+}
+
+// ================================================================
+// デバッグ：archiveCompletedSchedules の削除対象を確認（削除はしない）
+// ================================================================
+function debugArchiveSchedules() {
+  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 13, 6);
+
+  Logger.log('=== 外部スケジュールSS 製品×ステータス一覧 ===');
+  const productStatuses = new Map();
+  for (const r of scheduleRows) {
+    const product = String(r[S.product] || '').trim();
+    const status  = String(r[S.status]  || '').trim();
+    if (!product) continue;
+    if (!productStatuses.has(product)) productStatuses.set(product, []);
+    productStatuses.get(product).push(status);
+  }
+  for (const [product, statuses] of productStatuses) {
+    Logger.log('  [' + statuses.join('、') + '] ' + product);
+  }
+
+  const ARCHIVE_STATUSES = new Set(['完了', '中断']);
+  const completed = new Set(
+    [...productStatuses.entries()]
+      .filter(([, statuses]) => statuses.length > 0 && statuses.every(s => ARCHIVE_STATUSES.has(s)))
+      .map(([product]) => product)
+  );
+  Logger.log('=== 削除対象（外部SSで全行 完了/中断）: ' + completed.size + '件 ===');
+  completed.forEach(p => Logger.log('  → ' + p));
+
+  const appSheet = SpreadsheetApp.openById(REPORT_CONFIG.logSSId).getSheetByName('スケジュール');
+  if (!appSheet || appSheet.getLastRow() <= 1) {
+    Logger.log('=== アプリのスケジュールシートが空 ===');
+    return;
+  }
+  const appProducts = appSheet.getRange(2, 2, appSheet.getLastRow() - 1, 1).getValues()
+    .map(r => String(r[0] || '').trim()).filter(Boolean);
+  Logger.log('=== アプリの製品リスト: ' + appProducts.length + '件 ===');
+  appProducts.forEach(p => {
+    const hit = completed.has(p);
+    Logger.log('  ' + (hit ? '【削除対象】' : '【残す】') + p);
+  });
 }
 
 // 集計期間：実行日の7日前〜前日
@@ -774,7 +867,7 @@ function reorderSheets() {
 // ================================================================
 function cleanupUndefinedRows() {
   const reportSS = getOrCreateReportSS();
-  const targets = ['③月別推移', '⑤ブランド別', '⑥企画別', '⑦職人別', '④職人別月次'];
+  const targets = ['③月別推移', '⑤ブランド別', '⑥企画別', '⑦製品×職人別', '④職人別月次'];
   targets.forEach(name => {
     const sheet = reportSS.getSheetByName(name);
     if (!sheet) return;
@@ -1089,13 +1182,14 @@ function createUsageGuideDoc() {
   addItalic('【記入ルール】裁断は各サンプルフェーズ（モック・1st・2nd・3rdなど）の開始時に行う作業です。裁断の時間は別フェーズとして記録せず、そのサンプルフェーズの作業時間に含めて入力してください。');
   body.appendParagraph('');
 
-  addHeading('⑦ 職人別（橙タブ）', H2);
-  addText('職人×ブランド×企画ごとの工数（月次追記）。1行 = 職人1人 × 企画1件 × 1ヶ月。');
+  addHeading('⑦ 製品×職人別（橙タブ）', H2);
+  addText('製品×職人の組み合わせで工数を集計（月次追記）。1行 = 製品1件 × 職人1人 × 1ヶ月。フェーズ大分類（モック/1st/2nd/3rd/その他）別の月内・累計内訳あり。');
   addTable([
     ['見るポイント', '活用例'],
-    ['ブランドでフィルタ', '「このブランドに誰が何時間入ったか」が一覧できる'],
-    ['企画名でフィルタ', '「この企画に誰が関わったか」が一覧できる'],
-    ['職人名でフィルタ', '「この職人は今月どの仕事をしていたか」がわかる'],
+    ['製品名でフィルタ', '「この製品に誰が何時間かけたか・どのフェーズが多かったか」が一覧できる'],
+    ['職人名でフィルタ', '「この職人は今月どの製品のどのフェーズを担当したか」がわかる'],
+    ['企画名でフィルタ', '「この企画の製品群に誰が関わったか」が一覧できる'],
+    ['月内_モック〜その他列', '製品×職人ごとに今月どのフェーズに時間を使ったかが見える'],
   ]);
 
   addHeading('④ 職人別月次（青緑タブ）', H2);
@@ -1145,6 +1239,23 @@ function createUsageGuideDoc() {
   addText('1. 日報ログSSの該当行を直接修正する');
   addText('2. 集計レポートSSの該当月シート（③④⑤⑥）の該当月行を削除する');
   addText('3. GASエディタで generateMonthlyReport を再実行して再集計する');
+
+  addHeading('製品リストの自動クリーンアップ', H2);
+  addText('日報アプリの製品リスト（設定 → 製品管理）は、毎週木曜の自動実行時にスケジュールSSと突合し、完了した製品を自動で削除します。');
+  addTable([
+    ['項目', '内容'],
+    ['実行タイミング', '毎週木曜 朝7時（週次レポートと同時）'],
+    ['削除条件', 'スケジュールSSのステータス（M列）が全行「完了」または「中断」の製品'],
+    ['削除されない場合', 'ステータスが1行でも「試作中」「予定」など進行中のものがある / スケジュールSSに製品名の登録がない'],
+    ['手動で今すぐ実行', 'GASエディタで archiveCompletedSchedules() を実行'],
+  ]);
+  addHeading('製品が削除されない時の確認ポイント', H3);
+  addTable([
+    ['確認事項', '対処'],
+    ['アプリの製品名とスケジュールSSのD列（サンプル製品名称）が一致しているか', 'debugUnmatched() を実行して表記ゆれを確認・修正'],
+    ['スケジュールSSのステータス（M列）が正しく「完了」になっているか', 'スケジュールSSを直接開いて確認'],
+    ['同じ製品名で「完了」以外の行が残っていないか', 'スケジュールSSでその製品名を検索して全行のステータスを確認'],
+  ]);
 
   // ===== 各シートの列定義と計算式 =====
 
@@ -1255,18 +1366,20 @@ function createUsageGuideDoc() {
     ['累計_型紙・抜き型〜工程表(h)', '全期間版のフェーズ中分類内訳（5列）。企画間比較の主役'],
   ]);
 
-  addHeading('⑦ 職人別', H3);
-  addText('月次追記。職人×企画の組み合わせで1行。当月に動きがあったもののみ追記。');
+  addHeading('⑦ 製品×職人別', H3);
+  addText('月次追記。製品×職人の組み合わせで1行。当月に動きがあったもののみ追記。');
   addTable([
     ['列名', '計算内容'],
     ['年月', '例：「2026年05月」'],
+    ['企画名', 'スケジュールSSから製品名で逆引き'],
+    ['製品名', '日報に記入された製品名'],
     ['職人名', '日報に記入された職人名'],
-    ['ブランド', 'スケジュールSSから逆引き（製品名 or 企画名で突合）'],
-    ['企画名', '企画名（未突合の場合は製品名）'],
-    ['月内工数(h)', '当月のその職人×企画の作業時間(分)合計 ÷ 60'],
+    ['月内工数(h)', '当月のその製品×職人の作業時間(分)合計 ÷ 60'],
     ['月内労務費(円)', '当月の労務費合計'],
-    ['累計工数(h)', '全期間のその職人×企画の作業時間(分)合計 ÷ 60'],
+    ['累計工数(h)', '全期間のその製品×職人の作業時間(分)合計 ÷ 60'],
     ['累計労務費(円)', '全期間の労務費合計'],
+    ['月内_モック〜その他(h)', '当月・フェーズ大分類別の作業時間(分)合計 ÷ 60（5列：モック/1st/2nd/3rd/その他）'],
+    ['累計_モック〜その他(h)', '全期間・フェーズ大分類別の作業時間(分)合計 ÷ 60（5列）'],
   ]);
 
   addHeading('④ 職人別月次', H3);

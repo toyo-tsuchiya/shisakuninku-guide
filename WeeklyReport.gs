@@ -260,11 +260,53 @@ function appendToWorkerWeekly(reportSS, logRows, startDate, endDate) {
 
   if (newRows.length > 0) {
     const insertRow = sheet.getLastRow() + 1;
+
+    // 既存の週数（ユニークな集計開始日の数）で色インデックスを決める
+    const weekIndex = insertRow > 2
+      ? new Set(sheet.getRange(2, 1, insertRow - 2, 1).getValues().map(r => String(r[0]))).size
+      : 0;
+    const bgColor = weekIndex % 2 === 1 ? '#E3F2FD' : '#FFFFFF';
+
     sheet.getRange(insertRow, 1, newRows.length, HEADERS.length).setValues(newRows);
     sheet.getRange(insertRow, 9, newRows.length, 1).setNumberFormat('#,##0');
+    sheet.getRange(insertRow, 1, newRows.length, HEADERS.length).setBackground(bgColor);
   }
 }
 
+// ================================================================
+// ② 職人別週次：既存データに週ごとの色分けを一括適用（1回のみ実行）
+// ================================================================
+function colorWorkerWeeklySheet() {
+  const sheet = getOrCreateReportSS().getSheetByName('②職人別週次');
+  if (!sheet || sheet.getLastRow() <= 1) return;
+
+  const lastRow = sheet.getLastRow();
+  const numCols = sheet.getLastColumn();
+  const vals = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+
+  let currentKey = null;
+  let weekIndex  = -1;
+  let groupStart = 2;
+
+  for (let i = 0; i < vals.length; i++) {
+    const key = String(vals[i][0]);
+    const row = i + 2;
+    if (key !== currentKey) {
+      if (currentKey !== null) {
+        const bg = weekIndex % 2 === 1 ? '#E3F2FD' : '#FFFFFF';
+        sheet.getRange(groupStart, 1, row - groupStart, numCols).setBackground(bg);
+      }
+      currentKey = key;
+      weekIndex++;
+      groupStart = row;
+    }
+  }
+  // 最後のグループ
+  const bg = weekIndex % 2 === 1 ? '#E3F2FD' : '#FFFFFF';
+  sheet.getRange(groupStart, 1, lastRow - groupStart + 1, numCols).setBackground(bg);
+
+  Logger.log('②職人別週次 色分け完了: ' + (weekIndex + 1) + '週分');
+}
 
 // ================================================================
 // 月次メイン（毎月1日 朝7時に自動実行）

@@ -10,6 +10,10 @@ const REPORT_CONFIG = {
   reportSSName:     '試作課週次レポート',
 };
 
+// 未入力リマインドの営業日判定で除外する休業日
+const JP_HOLIDAY_CALENDAR_ID = 'ja.japanese#holiday@group.v.calendar.google.com';
+const HOLIDAY_SHEET_NAME     = '休日';  // 日報集計SS内。年末年始など会社独自の休業日をA列に並べる
+
 // 日報ログの列インデックス（0始まり）
 const L = {
   date:      1,  // B: 日付
@@ -42,7 +46,7 @@ const S = {
 };
 
 // ================================================================
-// 週次メイン（毎週木曜 朝7時に自動実行）
+// 週次メイン（毎週木曜 朝8時に自動実行）
 // ================================================================
 function generateWeeklyReport() {
   const { startDate, endDate } = getWeekRange();
@@ -52,6 +56,7 @@ function generateWeeklyReport() {
   appendToWeeklyTrend(reportSS, logRows, startDate, endDate);
   appendToWorkerWeekly(reportSS, logRows, startDate, endDate);
   archiveCompletedSchedules();
+  checkMissingReportsAndRemind(logRows, startDate, endDate);
 
   Logger.log('週次レポート更新完了: ' + reportSS.getUrl());
 }
@@ -104,6 +109,131 @@ function archiveCompletedSchedules() {
   // 後ろから削除（行ずれ防止）
   toDelete.reverse().forEach(row => appSheet.deleteRow(row));
   Logger.log('archiveCompletedSchedules 削除完了: ' + toDelete.length + '件 → ' + [...completed].join('、'));
+}
+
+// ================================================================
+// 日報未入力リマインド（週次レポートと同時に実行。新規トリガー不要）
+// 集計期間内の営業日ごとに日報ログを確認し、1日でも入力がない職人へ
+// その週の未入力日をまとめてメールで知らせる。カレンダー連携なし。
+// ================================================================
+function checkMissingReportsAndRemind(logRows, startDate, endDate) {
+  const appSS     = SpreadsheetApp.openById(REPORT_CONFIG.logSSId);
+  const craftsmen = getCraftsmenForReminder_(appSS).filter(c => c.email);
+  if (craftsmen.length === 0) {
+    Logger.log('checkMissingReportsAndRemind: メール登録済みの職人がいません（職人シートにメール列を入力してください）');
+    return;
+  }
+
+  const businessDays = getBusinessDaysInRange_(startDate, endDate, getHolidaySet_(startDate, endDate));
+  const loggedSet     = getLoggedDateSet_(logRows);
+
+  craftsmen.forEach(c => {
+    const missingDays = businessDays.filter(d => !loggedSet.has(c.name + '_' + dFmt(d)));
+    if (missingDays.length === 0) return;
+    sendMissingReportReminder_(c.email, c.name, missingDays);
+    Logger.log('リマインド送信: ' + c.name + ' <' + c.email + '> 未入力' + missingDays.length + '日');
+  });
+}
+
+// デバッグ：実際にはメールを送らず、誰にどの日が未入力として検知されるかだけログ出力する
+function debugMissingReports() {
+  const { startDate, endDate } = getWeekRange();
+  const logRows = getSheetData(REPORT_CONFIG.logSSId, REPORT_CONFIG.logSheetName, 18);
+  const appSS     = SpreadsheetApp.openById(REPORT_CONFIG.logSSId);
+  const craftsmen = getCraftsmenForReminder_(appSS);
+
+  const holidaySet   = getHolidaySet_(startDate, endDate);
+  const businessDays = getBusinessDaysInRange_(startDate, endDate, holidaySet);
+  const loggedSet     = getLoggedDateSet_(logRows);
+
+  Logger.log('=== 未入力チェック対象期間: ' + dFmt(startDate) + '〜' + dFmt(endDate) + ' ===');
+  Logger.log('除外した休業日: ' + ([...holidaySet].sort().join('、') || 'なし'));
+  Logger.log('判定対象の営業日: ' + businessDays.map(d => dFmt(d)).join('、'));
+  craftsmen.forEach(c => {
+    const missingDays = businessDays.filter(d => !loggedSet.has(c.name + '_' + dFmt(d)));
+    if (missingDays.length === 0) { Logger.log('  ○ 全日入力済み: ' + c.name); return; }
+    const label = c.email ? '× リマインド対象' : '△ 未入力だがメール未登録のため対象外';
+    Logger.log('  ' + label + ': ' + c.name + ' → ' + missingDays.map(d => dFmt(d)).join('、'));
+  });
+}
+
+// 期間内の営業日（土日・祝日・会社休業日を除く）一覧を返す
+function getBusinessDaysInRange_(startDate, endDate, holidaySet) {
+  const days = [];
+  const d = new Date(startDate);
+  d.setHours(0, 0, 0, 0);
+  const end = new Date(endDate);
+  end.setHours(0, 0, 0, 0);
+  while (d <= end) {
+    const dow = d.getDay();
+    const isHoliday = holidaySet ? holidaySet.has(dFmt(d)) : false;
+    if (dow !== 0 && dow !== 6 && !isHoliday) days.push(new Date(d));
+    d.setDate(d.getDate() + 1);
+  }
+  return days;
+}
+
+// 期間内の休業日セットを返す（Googleの日本の祝日カレンダー ＋ 日報集計SSの「休日」シート）
+// 「休日」シートは任意。なければ祝日カレンダーのみで判定する。
+function getHolidaySet_(startDate, endDate) {
+  const set = new Set();
+
+  try {
+    const cal = CalendarApp.getCalendarById(JP_HOLIDAY_CALENDAR_ID);
+    if (cal) {
+      cal.getEvents(startDate, endDate).forEach(e => {
+        const d = e.isAllDayEvent() ? e.getAllDayStartDate() : e.getStartTime();
+        set.add(dFmt(d));
+      });
+    }
+  } catch (err) {
+    // カレンダーが読めなくてもリマインド自体は動かす（土日のみ除外に劣化）
+    Logger.log('祝日カレンダー取得失敗: ' + err);
+  }
+
+  const sheet = SpreadsheetApp.openById(REPORT_CONFIG.logSSId).getSheetByName(HOLIDAY_SHEET_NAME);
+  if (sheet && sheet.getLastRow() > 1) {
+    const from = new Date(startDate); from.setHours(0, 0, 0, 0);
+    const to   = new Date(endDate);   to.setHours(23, 59, 59, 999);
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().forEach(row => {
+      const d = toDate(row[0]);
+      if (d && d >= from && d <= to) set.add(dFmt(d));
+    });
+  }
+
+  return set;
+}
+
+// 日報集計SSの「職人」シートから職人（名前・メール）を取得
+// ※getCraftsmen は日報アプリ(Code.gs)側の関数で、このプロジェクトからは参照できないため自前で持つ
+function getCraftsmenForReminder_(ss) {
+  const s = ss.getSheetByName('職人');
+  if (!s || s.getLastRow() <= 1) return [];
+  return s.getRange(2, 1, s.getLastRow() - 1, 4).getValues()
+    .filter(r => r[1])
+    .map(r => ({ id: r[0], name: r[1], note: r[2], email: r[3] }));
+}
+
+// 日報ログから「職人名_日付」の提出済みセットを作る
+function getLoggedDateSet_(logRows) {
+  return new Set(
+    logRows
+      .map(r => { const d = toDate(r[L.date]); return d ? String(r[L.worker]||'').trim() + '_' + dFmt(d) : null; })
+      .filter(Boolean)
+  );
+}
+
+function sendMissingReportReminder_(email, name, missingDays) {
+  const dateList = missingDays.map(d => dFmt(d)).join('\n・');
+  MailApp.sendEmail(
+    email,
+    '【日報】今週分の未入力日があります',
+    name + ' さん\n\n' +
+    '今週の集計期間中、以下の日付で日報の入力が確認できませんでした。\n' +
+    '・' + dateList + '\n\n' +
+    '休みなどで問題ない場合はそのままで大丈夫です。入力漏れの場合はご入力をお願いします。\n\n' +
+    '（このメールは試作課日報アプリからの自動送信です）'
+  );
 }
 
 // ================================================================
@@ -384,7 +514,7 @@ function colorMonthlyAllSheets() {
 }
 
 // ================================================================
-// 月次メイン（毎月1日 朝7時に自動実行）
+// 月次メイン（毎月1日 朝8時に自動実行。前月分を自動判定して集計）
 // ================================================================
 function generateMonthlyReport() {
   const d = new Date();
@@ -1053,8 +1183,8 @@ function setupWeeklyTrigger() {
     .filter(t => t.getHandlerFunction() === 'generateWeeklyReport')
     .forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('generateWeeklyReport')
-    .timeBased().onWeekDay(ScriptApp.WeekDay.THURSDAY).atHour(7).create();
-  Logger.log('週次トリガー設定完了: 毎週木曜 7:00');
+    .timeBased().onWeekDay(ScriptApp.WeekDay.THURSDAY).atHour(8).create();
+  Logger.log('週次トリガー設定完了: 毎週木曜 8:00');
 }
 
 function setupMonthlyTrigger() {
@@ -1062,8 +1192,8 @@ function setupMonthlyTrigger() {
     .filter(t => t.getHandlerFunction() === 'generateMonthlyReport')
     .forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('generateMonthlyReport')
-    .timeBased().onMonthDay(1).atHour(7).create();
-  Logger.log('月次トリガー設定完了: 毎月1日 7:00');
+    .timeBased().onMonthDay(1).atHour(8).create();
+  Logger.log('月次トリガー設定完了: 毎月1日 8:00');
 }
 
 // ================================================================
@@ -1386,14 +1516,14 @@ function createUsageGuideDoc() {
   addHeading('入力ミスを見つけたら', H3);
   addText('1. 日報ログSSの該当行を直接修正する');
   addText('2. 集計レポートSSの該当月シート（③④⑤⑥）の該当月行を削除する');
-  addText('3. GASエディタで generateMonthlyReport を再実行して再集計する');
+  addText('3. GASエディタで該当月のラッパー関数（例：run202606()）を実行して再集計する');
 
   // 製品リストの自動クリーンアップ
   addHeading('製品リストの自動クリーンアップ', H2);
   addText('日報アプリの製品リスト（設定 → 製品管理）は、毎週木曜の自動実行時にスケジュールSSと突合し、完了した製品を自動で削除します。');
   addTable([
     ['項目', '内容'],
-    ['実行タイミング', '毎週木曜 朝7時（週次レポートと同時）'],
+    ['実行タイミング', '毎週木曜 朝8時（週次レポートと同時）'],
     ['削除条件', 'スケジュールSSのステータス（M列）が全行「完了」または「中断」の製品'],
     ['削除されない場合', 'ステータスが1行でも「試作中」「予定」など進行中のものがある / スケジュールSSに製品名の登録がない'],
     ['手動で今すぐ実行', 'GASエディタで archiveCompletedSchedules() を実行'],

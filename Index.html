@@ -392,8 +392,15 @@ tr:active td{background:#f5fbfb}
       <div class="row" style="align-items:flex-end">
         <div class="fg"><label>名前</label>
           <input type="text" id="c-name" placeholder="田中 太郎">
+          <input type="hidden" id="c-edit-orig">
+          <input type="hidden" id="c-note-orig">
         </div>
-        <button class="btn btn-mono btn-sm" onclick="addCraftsman()">追加</button>
+        <div class="fg"><label>メール（未入力リマインド送信先）</label>
+          <input type="text" id="c-email" placeholder="tanaka@example.com">
+        </div>
+        <button class="btn btn-mono btn-sm" id="c-add-btn" onclick="addCraftsman()">追加</button>
+        <button class="btn btn-p btn-sm" id="c-save-btn" style="display:none" onclick="saveCraftsmanEdit()">更新</button>
+        <button class="btn btn-g btn-sm" id="c-cancel-btn" style="display:none" onclick="cancelCraftsmanEdit()">キャンセル</button>
       </div>
       <div id="list-c" style="margin-top:32px" class="ld">読み込み中...</div>
     </div>
@@ -1239,8 +1246,39 @@ function addCraftsman() {
   const name = document.getElementById('c-name').value.trim();
   if (!name) { toast('名前を入力してください','err'); return; }
   google.script.run
-    .withSuccessHandler(r => { toast(r.message,r.success?'ok':'err'); if(r.success){document.getElementById('c-name').value=''; reload();} })
-    .addCraftsman(name, '');
+    .withSuccessHandler(r => { toast(r.message,r.success?'ok':'err'); if(r.success){document.getElementById('c-name').value='';document.getElementById('c-email').value=''; reload();} })
+    .addCraftsman(name, v('c-email'), '');
+}
+
+function editCraftsman(name) {
+  const c = S.craftsmen.find(c => c.name === name);
+  if (!c) return;
+  document.getElementById('c-name').value      = c.name;
+  document.getElementById('c-email').value     = c.email || '';
+  document.getElementById('c-edit-orig').value = c.name;
+  document.getElementById('c-note-orig').value = c.note || '';
+  document.getElementById('c-add-btn').style.display    = 'none';
+  document.getElementById('c-save-btn').style.display   = '';
+  document.getElementById('c-cancel-btn').style.display = '';
+  document.getElementById('c-name').focus();
+}
+
+function saveCraftsmanEdit() {
+  const orig = document.getElementById('c-edit-orig').value;
+  const name = document.getElementById('c-name').value.trim();
+  if (!name) { toast('名前を入力してください','err'); return; }
+  google.script.run
+    .withSuccessHandler(r => { toast(r.message,r.success?'ok':'err'); if(r.success){ cancelCraftsmanEdit(); reload(); } })
+    .updateCraftsman(orig, name, v('c-email'), document.getElementById('c-note-orig').value);
+}
+
+function cancelCraftsmanEdit() {
+  ['c-name','c-email'].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('c-edit-orig').value = '';
+  document.getElementById('c-note-orig').value = '';
+  document.getElementById('c-add-btn').style.display    = '';
+  document.getElementById('c-save-btn').style.display   = 'none';
+  document.getElementById('c-cancel-btn').style.display = 'none';
 }
 
 function addSchedule() {
@@ -1399,7 +1437,11 @@ function moveWorkType(name, dir) { google.script.run.withSuccessHandler(r=>{toas
 
 function renderLists() {
   document.getElementById('list-c').innerHTML = S.craftsmen.length
-    ? mTable(['ID','名前','備考'], S.craftsmen.map(c=>[c.id, `<strong>${esc(c.name)}</strong>`, esc(c.note), `<button class="btn btn-d btn-sm" onclick="delCraftsman('${esc(c.name)}')">削除</button>`]))
+    ? mTable(['ID','名前','メール','備考'], S.craftsmen.map(c=>[
+        c.id, `<strong>${esc(c.name)}</strong>`, esc(c.email) || '—', esc(c.note),
+        `<button class="btn btn-mono btn-sm" onclick="editCraftsman('${esc(c.name)}')">修正</button>
+         <button class="btn btn-d btn-sm" onclick="delCraftsman('${esc(c.name)}')">削除</button>`
+      ]))
     : '<div class="empty">未登録</div>';
 
   document.getElementById('list-p').innerHTML = S.schedules.length

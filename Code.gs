@@ -32,8 +32,10 @@ function setup() {
   // 職人
   let s = getOrCreate(ss, SHEETS.CRAFTSMEN);
   if (s.getLastRow() === 0) {
-    s.appendRow(['ID', '名前', '備考']);
-    header(s, 3);
+    s.appendRow(['ID', '名前', '備考', 'メール']);
+    header(s, 4);
+  } else if (s.getLastColumn() < 4) {
+    s.getRange(1, 4).setValue('メール');
   }
 
   // スケジュール（製品マスタ）
@@ -213,8 +215,8 @@ function getCraftsmen(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   const s = ss.getSheetByName(SHEETS.CRAFTSMEN);
   if (!s || s.getLastRow() <= 1) return [];
-  return s.getRange(2, 1, s.getLastRow()-1, 3).getValues()
-    .filter(r => r[1]).map(r => ({ id:r[0], name:r[1], note:r[2] }));
+  return s.getRange(2, 1, s.getLastRow()-1, 4).getValues()
+    .filter(r => r[1]).map(r => ({ id:r[0], name:r[1], note:r[2], email:r[3] }));
 }
 
 function getSchedules(ss) {
@@ -320,12 +322,23 @@ function calcActualMinutes(clockIn, clockOut, breakMin) {
 // ----------------------------------------------------------
 // マスター管理
 // ----------------------------------------------------------
-function addCraftsman(name, note) {
+function addCraftsman(name, email, note) {
   if (!name) return { success:false, message:'名前を入力してください。' };
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const s  = ss.getSheetByName(SHEETS.CRAFTSMEN);
-  s.appendRow(['C'+String(s.getLastRow()).padStart(3,'0'), name, note||'']);
+  s.appendRow(['C'+String(s.getLastRow()).padStart(3,'0'), name, note||'', email||'']);
   return { success:true, message:`${name} を追加しました。` };
+}
+function updateCraftsman(origName, name, email, note) {
+  if (!name) return { success:false, message:'名前を入力してください。' };
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const s  = ss.getSheetByName(SHEETS.CRAFTSMEN);
+  if (!s || s.getLastRow() <= 1) return { success:false, message:'データがありません。' };
+  const data = s.getRange(2, 2, s.getLastRow()-1, 1).getValues();
+  const idx  = data.findIndex(r => r[0] === origName);
+  if (idx === -1) return { success:false, message:`「${origName}」が見つかりません。` };
+  s.getRange(idx+2, 2, 1, 3).setValues([[name, note||'', email||'']]);
+  return { success:true, message:`「${name}」を更新しました。` };
 }
 function deleteCraftsman(name) { return delRow(SHEETS.CRAFTSMEN, 2, name); }
 

@@ -39,15 +39,21 @@ function setup() {
   }
 
   // スケジュール（製品マスタ）
-  // 列: ID / 製品名 / シーズン・型振・VMD / ブランド / 企画名 / ステータス / 備考
+  // 列: ID / 製品名 / 製品or販促 / シーズン・型振・VMD / ブランド / 企画名
   s = getOrCreate(ss, SHEETS.SCHEDULES);
   if (s.getLastRow() === 0) {
-    s.appendRow(['ID', '製品名', 'シーズン・型振・VMD', 'ブランド', '企画名']);
-    header(s, 5);
+    s.appendRow(['ID', '製品名', '製品or販促', 'シーズン・型振・VMD', 'ブランド', '企画名']);
+    header(s, 6);
     s.setColumnWidth(2, 240);
-    s.setColumnWidth(3, 160);
-    s.setColumnWidth(4, 150);
-    s.setColumnWidth(5, 200);
+    s.setColumnWidth(3, 120);
+    s.setColumnWidth(4, 160);
+    s.setColumnWidth(5, 150);
+    s.setColumnWidth(6, 200);
+  } else if (s.getLastColumn() < 6) {
+    // 既存シートに製品or販促列を追加
+    s.getRange(1, 3).setValue('製品or販促');
+    s.insertColumns(3, 1);
+    s.getRange(2, 3, s.getLastRow()-1, 1).setValue('製品');
   }
 
   // ステージマスター（フェーズ大分類）
@@ -123,13 +129,16 @@ function setup() {
       '出勤時刻', '退勤時刻', '休憩(分)', '実働(分)',
       '種別', '製品名', 'フェーズ大分類', '作業種別',
       '作業時間(分)', '人工数', '労務費(円)',
-      'メモ', '提出日時', '企画名', 'フェーズ中分類'
+      'メモ', '提出日時', '企画名', 'フェーズ中分類', '製品or販促'
     ]);
-    header(s, 18);
+    header(s, 19);
     [2,3,8,9,13].forEach(c => s.setColumnWidth(c, 120));
     s.setColumnWidth(8, 220);
-  } else if (s.getLastColumn() < 18) {
-    s.getRange(1, 18).setValue('フェーズ中分類');
+  } else if (s.getLastColumn() < 19) {
+    s.getRange(1, 19).setValue('製品or販促');
+    if (s.getLastColumn() < 18) {
+      s.getRange(1, 18).setValue('フェーズ中分類');
+    }
     if (s.getRange(1, 10).getValue() === 'フェーズ') {
       s.getRange(1, 10).setValue('フェーズ大分類');
     }
@@ -223,9 +232,11 @@ function getSchedules(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   const s = ss.getSheetByName(SHEETS.SCHEDULES);
   if (!s || s.getLastRow() <= 1) return [];
-  return s.getRange(2, 1, s.getLastRow()-1, 5).getValues()
+  const hasCategory = s.getLastColumn() >= 6;
+  const cols = hasCategory ? 6 : 5;
+  return s.getRange(2, 1, s.getLastRow()-1, cols).getValues()
     .filter(r => r[1]).map(r => ({
-      id:r[0], name:r[1], season:r[2]||'', brand:r[3]||'', plan:r[4]||''
+      id:r[0], name:r[1], category:hasCategory ? (r[2]||'') : '', season:hasCategory ? (r[3]||'') : (r[2]||''), brand:hasCategory ? (r[4]||'') : (r[3]||''), plan:hasCategory ? (r[5]||'') : (r[4]||'')
     }));
 }
 
@@ -270,12 +281,24 @@ function submitReport(craftsmanName, dateStr, clockIn, clockOut, breakMin, rows,
   const sheet = ss.getSheetByName(SHEETS.LOGS);
   const submittedAt = fmt(new Date(), 'yyyy/MM/dd HH:mm:ss');
 
-  // 製品名 → 企画名 のルックアップ（スケジュールマスターから）
+  // 製品名 → 企画名・製品or販促 のルックアップ（スケジュールマスターから）
   const schedSheet = ss.getSheetByName(SHEETS.SCHEDULES);
   const productToPlan = new Map();
+  const productToCategory = new Map();
   if (schedSheet && schedSheet.getLastRow() > 1) {
-    schedSheet.getRange(2, 1, schedSheet.getLastRow()-1, 5).getValues()
-      .forEach(r => { if (r[1]) productToPlan.set(r[1], r[4]||''); });
+    const hasCategory = schedSheet.getLastColumn() >= 6;
+    const cols = hasCategory ? 6 : 5;
+    schedSheet.getRange(2, 1, schedSheet.getLastRow()-1, cols).getValues()
+      .forEach(r => {
+        if (r[1]) {
+          if (hasCategory) {
+            productToCategory.set(r[1], r[2]||'');
+            productToPlan.set(r[1], r[5]||'');
+          } else {
+            productToPlan.set(r[1], r[4]||'');
+          }
+        }
+      });
   }
 
   rows.forEach(row => {
@@ -284,6 +307,7 @@ function submitReport(craftsmanName, dateStr, clockIn, clockOut, breakMin, rows,
     const cost  = Math.round(min * RATE_PER_MINUTE);
     const isSample = (row.type !== 'other');
     const planName = isSample ? (productToPlan.get(row.productName) || '') : '';
+    const category = isSample ? (productToCategory.get(row.productName) || '') : '';
     sheet.appendRow([
       Utilities.getUuid(),
       dateStr, craftsmanName,
@@ -296,7 +320,8 @@ function submitReport(craftsmanName, dateStr, clockIn, clockOut, breakMin, rows,
       row.memo || memo || '',
       submittedAt,
       planName,
-      isSample ? (row.stageSubcat||'') : ''
+      isSample ? (row.stageSubcat||'') : '',
+      category
     ]);
   });
 
@@ -342,16 +367,16 @@ function updateCraftsman(origName, name, email, note) {
 }
 function deleteCraftsman(name) { return delRow(SHEETS.CRAFTSMEN, 2, name); }
 
-function addSchedule(name, season, brand, plan) {
+function addSchedule(name, category, season, brand, plan) {
   if (!name) return { success:false, message:'製品名を入力してください。' };
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const s  = ss.getSheetByName(SHEETS.SCHEDULES);
-  s.appendRow(['S'+String(s.getLastRow()).padStart(3,'0'), name, season||'', brand||'', plan||'']);
+  s.appendRow(['S'+String(s.getLastRow()).padStart(3,'0'), name, category||'製品', season||'', brand||'', plan||'']);
   return { success:true, message:`「${name}」を追加しました。` };
 }
 function deleteSchedule(name) { return delRow(SHEETS.SCHEDULES, 2, name); }
 
-function updateSchedule(origName, name, season, brand, plan) {
+function updateSchedule(origName, name, category, season, brand, plan) {
   if (!name) return { success:false, message:'製品名を入力してください。' };
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const s  = ss.getSheetByName(SHEETS.SCHEDULES);
@@ -359,7 +384,7 @@ function updateSchedule(origName, name, season, brand, plan) {
   const data = s.getRange(2, 2, s.getLastRow()-1, 1).getValues();
   const idx  = data.findIndex(r => r[0] === origName);
   if (idx === -1) return { success:false, message:`「${origName}」が見つかりません。` };
-  s.getRange(idx+2, 2, 1, 4).setValues([[name, season||'', brand||'', plan||'']]);
+  s.getRange(idx+2, 2, 1, 5).setValues([[name, category||'製品', season||'', brand||'', plan||'']]);
   return { success:true, message:`「${name}」を更新しました。` };
 }
 

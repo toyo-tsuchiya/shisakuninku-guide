@@ -363,6 +363,12 @@ tr:active td{background:#f5fbfb}
     <div class="acc-body">
       <p class="setting-note">⚠ 製品名を入力する際は、集計時に参照できるよう正式名称またはスケジュール表と完全一致させてください。</p>
       <div class="row">
+        <div class="fg w2"><label>製品/販促</label>
+          <select id="p-category">
+            <option value="製品">製品</option>
+            <option value="販促">販促</option>
+          </select>
+        </div>
         <div class="fg"><label>シーズン・型振・VMD</label>
           <input type="text" id="p-season" placeholder="例: 2027SS / VN型振り">
         </div>
@@ -1286,7 +1292,7 @@ function addSchedule() {
   if (!name) { toast('製品名を入力してください','err'); return; }
   google.script.run
     .withSuccessHandler(r => { toast(r.message,r.success?'ok':'err'); if(r.success){document.getElementById('p-name').value=''; reload();} })
-    .addSchedule(name, v('p-season'), v('p-brand'), v('p-plan'));
+    .addSchedule(name, v('p-category'), v('p-season'), v('p-brand'), v('p-plan'));
 }
 
 function addStage() {
@@ -1309,6 +1315,7 @@ function addSubcat() {
 function editSchedule(name) {
   const sch = S.schedules.find(s => s.name === name);
   if (!sch) return;
+  document.getElementById('p-category').value = sch.category || '製品';
   document.getElementById('p-name').value   = sch.name;
   document.getElementById('p-season').value = sch.season || '';
   document.getElementById('p-brand').value  = sch.brand  || '';
@@ -1326,11 +1333,15 @@ function saveScheduleEdit() {
   if (!name) { toast('製品名を入力してください','err'); return; }
   google.script.run
     .withSuccessHandler(r => { toast(r.message,r.success?'ok':'err'); if(r.success){ cancelScheduleEdit(); reload(); } })
-    .updateSchedule(orig, name, v('p-season'), v('p-brand'), v('p-plan'));
+    .updateSchedule(orig, name, v('p-category'), v('p-season'), v('p-brand'), v('p-plan'));
 }
 
 function cancelScheduleEdit() {
-  ['p-name','p-season','p-brand','p-plan'].forEach(id => { document.getElementById(id).value = ''; });
+  ['p-category','p-name','p-season','p-brand','p-plan'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el.tagName === 'SELECT') el.value = '製品';
+    else el.value = '';
+  });
   document.getElementById('p-edit-orig').value = '';
   document.getElementById('p-add-btn').style.display    = '';
   document.getElementById('p-save-btn').style.display   = 'none';
@@ -1446,9 +1457,10 @@ function renderLists() {
 
   document.getElementById('list-p').innerHTML = S.schedules.length
     ? mTable(
-        ['製品名','シーズン・型振・VMD','ブランド','企画名'],
+        ['製品名','製品/販促','シーズン・型振・VMD','ブランド','企画名'],
         S.schedules.map(s => [
           `<strong>${esc(s.name)}</strong>`,
+          `<span class="badge ${s.category==='販促'?'b-or':'b-bl'}">${esc(s.category||'製品')}</span>`,
           esc(s.season) || '—',
           esc(s.brand)  || '—',
           esc(s.plan)   || '—',

@@ -7,7 +7,8 @@ const REPORT_CONFIG = {
   scheduleSSId:     '1vdejHfw6fbgVNJc0BuV3xYEWpNNc6lE5iaQYIIJ-QFs',
   logSheetName:     '日報ログ',
   scheduleSheetName:'【スケジュール】2024.01～',
-  reportSSName:     '試作課週次レポート',
+  reportSSId:       '14tMjnRUk5cguC3iX80DwjxeVmyO9TYuv0JFU4cW_ziE',  // 集計レポートSS（ID直指定。名前変更の影響を受けない）
+  reportSSName:     'WeeklyReport',
 };
 
 // 未入力リマインドの営業日判定で除外する休業日
@@ -27,6 +28,7 @@ const L = {
   laborCost: 13, // N: 労務費(円)
   planName:  16, // Q: 企画名
   subcat:    17, // R: フェーズ中分類
+  category:  18, // S: 製品or販促
 };
 
 // フェーズ中分類マスター（Code.gsのSHEETS.STAGE_SUBCATSと同期）
@@ -54,7 +56,7 @@ const S = {
 // ================================================================
 function generateWeeklyReport() {
   const { startDate, endDate } = getWeekRange();
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       18);
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       19);
   const reportSS     = getOrCreateReportSS();
 
   appendToWeeklyTrend(reportSS, logRows, startDate, endDate);
@@ -142,7 +144,7 @@ function checkMissingReportsAndRemind(logRows, startDate, endDate) {
 // デバッグ：実際にはメールを送らず、誰にどの日が未入力として検知されるかだけログ出力する
 function debugMissingReports() {
   const { startDate, endDate } = getWeekRange();
-  const logRows = getSheetData(REPORT_CONFIG.logSSId, REPORT_CONFIG.logSheetName, 18);
+  const logRows = getSheetData(REPORT_CONFIG.logSSId, REPORT_CONFIG.logSheetName, 19);
   const appSS     = SpreadsheetApp.openById(REPORT_CONFIG.logSSId);
   const craftsmen = getCraftsmenForReminder_(appSS);
 
@@ -280,6 +282,28 @@ function debugArchiveSchedules() {
     const hit = completed.has(p);
     Logger.log('  ' + (hit ? '【削除対象】' : '【残す】') + p);
   });
+}
+
+// ================================================================
+// 製品/販促区分の解決（⑤⑥⑦⑧の内訳集計で使用）
+// ================================================================
+// 製品名 → 製品or販促 のマップ（日報アプリの製品マスタから。区分列が空の過去ログの補完用）
+function getProductCategoryMap_() {
+  const map = new Map();
+  const s = SpreadsheetApp.openById(REPORT_CONFIG.logSSId).getSheetByName('スケジュール');
+  if (!s || s.getLastRow() <= 1) return map;
+  s.getRange(2, 2, s.getLastRow() - 1, 2).getValues().forEach(r => {
+    const name = String(r[0] || '').trim();
+    const cat  = String(r[1] || '').trim();
+    if (name && cat) map.set(name, cat);
+  });
+  return map;
+}
+
+// ログ1行の区分を返す：ログの区分列 → 製品マスタ → 既定「製品」
+function logCategory_(r, catMap) {
+  const c = String(r[L.category] || '').trim() || catMap.get(r[L.product]) || '';
+  return c === '販促' ? '販促' : '製品';
 }
 
 // 集計期間：実行日の7日前〜前日
@@ -535,7 +559,7 @@ function generateMonthlyReportForMonth(year, month) {
   const endDate   = new Date(year, month,       0, 23, 59, 59, 999);
   const label     = year + '年' + String(month).padStart(2, '0') + '月';
 
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       18);
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       19);
   const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
   const reportSS     = getOrCreateReportSS();
 
@@ -608,8 +632,20 @@ function appendToMonthlyTrend(reportSS, logRows, startDate, endDate, label) {
 // ⑤ ブランド別（月次追記型・月内 + 累計）
 // ================================================================
 function appendToBrandReport(reportSS, logRows, scheduleRows, startDate, endDate, label) {
-  const HEADERS = ['年月', 'ブランド', '企画数', '製品数', '月内工数(h)', '月内労務費(円)', '累計工数(h)', '累計労務費(円)', '担当者（全期間）'];
+  const HEADERS = [
+    '年月', 'ブランド', '企画数', '製品数',
+    '月内工数(h)', '月内_製品(h)', '月内_販促(h)', '月内労務費(円)',
+    '累計工数(h)', '累計_製品(h)', '累計_販促(h)', '累計労務費(円)',
+    '担当者（全期間）',
+  ];
   const sheet = getOrInitSheet(reportSS, '⑤ブランド別', HEADERS, '#FDD663');
+
+  // ヘッダー列数が変わった場合（製品/販促内訳列追加など）は自動更新
+  if (sheet.getLastColumn() < HEADERS.length) {
+    sheet.getRange(1, 1, 1, HEADERS.length)
+      .setValues([HEADERS])
+      .setBackground('#37474F').setFontColor('#FFFFFF').setFontWeight('bold').setHorizontalAlignment('center');
+  }
 
   if (labelExists(sheet, label)) {
     Logger.log('⑤ブランド別: ' + label + ' 既存 → スキップ');
@@ -625,6 +661,7 @@ function appendToBrandReport(reportSS, logRows, scheduleRows, startDate, endDate
     if (s[S.planName]) planToBrand.set(s[S.planName], brand);
   }
 
+  const catMap = getProductCategoryMap_();
   const allSampleLogs   = logRows.filter(r => r[L.type] === 'サンプル製造');
   const monthSampleLogs = allSampleLogs.filter(r => { const d = toDate(r[L.date]); return d && d >= startDate && d <= endDate; });
 
@@ -632,12 +669,14 @@ function appendToBrandReport(reportSS, logRows, scheduleRows, startDate, endDate
   const allBrandMap = new Map();
   for (const r of allSampleLogs) {
     const brand = productToBrand.get(r[L.product]) || planToBrand.get(r[L.planName]) || '未紐付け';
-    if (!allBrandMap.has(brand)) allBrandMap.set(brand, { plans: new Set(), products: new Set(), workers: new Set(), workMin: 0, cost: 0 });
+    if (!allBrandMap.has(brand)) allBrandMap.set(brand, { plans: new Set(), products: new Set(), workers: new Set(), workMin: 0, productMin: 0, promoMin: 0, cost: 0 });
     const b = allBrandMap.get(brand);
     if (r[L.planName]) b.plans.add(r[L.planName]);
     if (r[L.product])  b.products.add(r[L.product]);
     if (r[L.worker])   b.workers.add(r[L.worker]);
-    b.workMin += Number(r[L.workMin])   || 0;
+    const min = Number(r[L.workMin]) || 0;
+    b.workMin += min;
+    if (logCategory_(r, catMap) === '販促') b.promoMin += min; else b.productMin += min;
     b.cost    += Number(r[L.laborCost]) || 0;
   }
 
@@ -645,11 +684,15 @@ function appendToBrandReport(reportSS, logRows, scheduleRows, startDate, endDate
   const monthBrandMap = new Map();
   for (const r of monthSampleLogs) {
     const brand = productToBrand.get(r[L.product]) || planToBrand.get(r[L.planName]) || '未紐付け';
-    if (!monthBrandMap.has(brand)) monthBrandMap.set(brand, { workMin: 0, cost: 0 });
+    if (!monthBrandMap.has(brand)) monthBrandMap.set(brand, { workMin: 0, productMin: 0, promoMin: 0, cost: 0 });
     const b = monthBrandMap.get(brand);
-    b.workMin += Number(r[L.workMin])   || 0;
+    const min = Number(r[L.workMin]) || 0;
+    b.workMin += min;
+    if (logCategory_(r, catMap) === '販促') b.promoMin += min; else b.productMin += min;
     b.cost    += Number(r[L.laborCost]) || 0;
   }
+
+  const hOrBlank = min => min > 0 ? +(min / 60).toFixed(1) : '';
 
   // 月内に動きがあったブランドのみ追記
   const newRows = [...allBrandMap.keys()]
@@ -660,8 +703,8 @@ function appendToBrandReport(reportSS, logRows, scheduleRows, startDate, endDate
       const month = monthBrandMap.get(brand);
       return [
         label, brand, all.plans.size, all.products.size,
-        +(month.workMin / 60).toFixed(1), month.cost,
-        +(all.workMin   / 60).toFixed(1), all.cost,
+        +(month.workMin / 60).toFixed(1), hOrBlank(month.productMin), hOrBlank(month.promoMin), month.cost,
+        +(all.workMin   / 60).toFixed(1), hOrBlank(all.productMin),   hOrBlank(all.promoMin),   all.cost,
         [...all.workers].join('、'),
       ];
     });
@@ -674,8 +717,8 @@ function appendToBrandReport(reportSS, logRows, scheduleRows, startDate, endDate
     const bgColor = monthIndex % 2 === 1 ? '#E3F2FD' : '#FFFFFF';
     sheet.getRange(insertRow, 1, newRows.length, HEADERS.length).setValues(newRows);
     sheet.getRange(insertRow, 1, newRows.length, HEADERS.length).setBackground(bgColor);
-    sheet.getRange(insertRow, 6, newRows.length, 1).setNumberFormat('#,##0');
-    sheet.getRange(insertRow, 8, newRows.length, 1).setNumberFormat('#,##0');
+    sheet.getRange(insertRow, 8,  newRows.length, 1).setNumberFormat('#,##0');
+    sheet.getRange(insertRow, 12, newRows.length, 1).setNumberFormat('#,##0');
   }
 
   sheet.setFrozenRows(1);
@@ -691,7 +734,8 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
   const HEADERS = [
     'ステータス',
     '年月', '企画名', 'ブランド', '製品名',
-    '月内工数(h)', '月内労務費(円)', '累計工数(h)', '累計労務費(円)',
+    '月内工数(h)', '月内_製品(h)', '月内_販促(h)', '月内労務費(円)',
+    '累計工数(h)', '累計_製品(h)', '累計_販促(h)', '累計労務費(円)',
     '担当者（月内）', '担当者（累計）',
     '実作業開始', '実作業最終', '作業日数',
     '計画開始', '計画完了',
@@ -726,6 +770,7 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
     if (product && plan) productPlanMap.set(product, plan);
   }
 
+  const catMap = getProductCategoryMap_();
   const allSampleLogs   = logRows.filter(r => r[L.type] === 'サンプル製造');
   const monthSampleLogs = allSampleLogs.filter(r => { const d = toDate(r[L.date]); return d && d >= startDate && d <= endDate; });
 
@@ -769,6 +814,12 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
       const monthCost   = colSum(monthLogs, L.laborCost);
       const allMin      = colSum(allLogs,   L.workMin);
       const allCost     = colSum(allLogs,   L.laborCost);
+
+      // 製品/販促内訳
+      const monthProductMin = colSum(monthLogs.filter(r => logCategory_(r, catMap) === '製品'), L.workMin);
+      const monthPromoMin   = colSum(monthLogs.filter(r => logCategory_(r, catMap) === '販促'), L.workMin);
+      const allProductMin   = colSum(allLogs.filter(r => logCategory_(r, catMap) === '製品'),   L.workMin);
+      const allPromoMin     = colSum(allLogs.filter(r => logCategory_(r, catMap) === '販促'),   L.workMin);
 
       const monthWorkers = [...new Set(monthLogs.map(r => r[L.worker]).filter(Boolean))].join('、');
       const allWorkers   = [...new Set(allLogs.map(r => r[L.worker]).filter(Boolean))].join('、');
@@ -829,8 +880,14 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
       return [
         statuses,
         label, planName, brand, products,
-        monthMin  > 0 ? +(monthMin  / 60).toFixed(1) : '', monthCost  > 0 ? monthCost  : '',
-        allMin    > 0 ? +(allMin    / 60).toFixed(1) : '', allCost    > 0 ? allCost    : '',
+        monthMin > 0 ? +(monthMin / 60).toFixed(1) : '',
+        monthProductMin > 0 ? +(monthProductMin / 60).toFixed(1) : '',
+        monthPromoMin   > 0 ? +(monthPromoMin   / 60).toFixed(1) : '',
+        monthCost > 0 ? monthCost : '',
+        allMin > 0 ? +(allMin / 60).toFixed(1) : '',
+        allProductMin > 0 ? +(allProductMin / 60).toFixed(1) : '',
+        allPromoMin   > 0 ? +(allPromoMin   / 60).toFixed(1) : '',
+        allCost > 0 ? allCost : '',
         monthWorkers, allWorkers,
         firstDate ? dFmt(firstDate) : '', lastDate ? dFmt(lastDate) : '', spanDays,
         planStart ? dFmt(planStart) : '', planEnd  ? dFmt(planEnd)  : '',
@@ -849,8 +906,8 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
     const bgColor = monthIndex % 2 === 1 ? '#E3F2FD' : '#FFFFFF';
     sheet.getRange(insertRow, 1, newRows.length, HEADERS.length).setValues(newRows);
     sheet.getRange(insertRow, 1, newRows.length, HEADERS.length).setBackground(bgColor);
-    sheet.getRange(insertRow, 7, newRows.length, 1).setNumberFormat('#,##0');
-    sheet.getRange(insertRow, 9, newRows.length, 1).setNumberFormat('#,##0');
+    sheet.getRange(insertRow, 9,  newRows.length, 1).setNumberFormat('#,##0');
+    sheet.getRange(insertRow, 13, newRows.length, 1).setNumberFormat('#,##0');
   }
 
   sheet.setFrozenRows(1);
@@ -866,7 +923,7 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
 function appendToProductReport(reportSS, logRows, scheduleRows, startDate, endDate, label) {
   const PHASE_KEYS = DETAIL_PHASE_KEYS;
   const HEADERS = [
-    '年月', '企画名', 'ブランド', '製品名', '担当人数', '担当者（累計）',
+    '年月', '企画名', 'ブランド', '製品名', '区分', '担当人数', '担当者（累計）',
     '月内工数(h)', '月内労務費(円)', '累計工数(h)', '累計労務費(円)',
     ...PHASE_KEYS.map(p => '月内_' + p + '(h)'), '月内_その他(h)',
     ...PHASE_KEYS.map(p => '累計_' + p + '(h)'), '累計_その他(h)',
@@ -897,6 +954,7 @@ function appendToProductReport(reportSS, logRows, scheduleRows, startDate, endDa
     if (plan && brand) planToBrand.set(plan, brand);
   }
 
+  const catMap = getProductCategoryMap_();
   const allSampleLogs   = logRows.filter(r => r[L.type] === 'サンプル製造');
   const monthSampleLogs = allSampleLogs.filter(r => { const d = toDate(r[L.date]); return d && d >= startDate && d <= endDate; });
 
@@ -905,12 +963,13 @@ function appendToProductReport(reportSS, logRows, scheduleRows, startDate, endDa
     for (const r of rows) {
       const product = r[L.product] || '';
       if (!product) continue;
-      if (!map.has(product)) map.set(product, { workMin: 0, cost: 0, workers: new Set(), phaseMin: new Map(), plan: '' });
+      if (!map.has(product)) map.set(product, { workMin: 0, cost: 0, workers: new Set(), phaseMin: new Map(), plan: '', category: '' });
       const e = map.get(product);
       e.workMin += Number(r[L.workMin])   || 0;
       e.cost    += Number(r[L.laborCost]) || 0;
       if (r[L.worker]) e.workers.add(r[L.worker]);
       if (!e.plan && r[L.planName]) e.plan = r[L.planName];
+      if (r[L.category]) e.category = r[L.category];
       const ph = r[L.phase] || '';
       const pk = PHASE_KEYS.includes(ph) ? ph : 'その他';
       e.phaseMin.set(pk, (e.phaseMin.get(pk) || 0) + (Number(r[L.workMin]) || 0));
@@ -925,13 +984,14 @@ function appendToProductReport(reportSS, logRows, scheduleRows, startDate, endDa
     .sort((a, b) => a.localeCompare(b, 'ja'))
     .map(product => {
       const month = monthMap.get(product);
-      const all   = allMap.get(product) || { workMin: 0, cost: 0, workers: new Set(), phaseMin: new Map(), plan: '' };
+      const all   = allMap.get(product) || { workMin: 0, cost: 0, workers: new Set(), phaseMin: new Map(), plan: '', category: '' };
       const plan  = productPlanMap.get(product) || all.plan || '';
       const brand = productToBrand.get(product) || planToBrand.get(plan) || '';
+      const category = all.category === '販促' || (!all.category && catMap.get(product) === '販促') ? '販促' : '製品';
       const monthPhaseCols = [...PHASE_KEYS, 'その他'].map(ph => { const m = month.phaseMin.get(ph) || 0; return m > 0 ? +(m / 60).toFixed(1) : ''; });
       const allPhaseCols   = [...PHASE_KEYS, 'その他'].map(ph => { const m = all.phaseMin.get(ph)   || 0; return m > 0 ? +(m / 60).toFixed(1) : ''; });
       return [
-        label, plan, brand, product, all.workers.size, [...all.workers].join('、'),
+        label, plan, brand, product, category, all.workers.size, [...all.workers].join('、'),
         month.workMin > 0 ? +(month.workMin / 60).toFixed(1) : '', month.cost > 0 ? month.cost : '',
         all.workMin   > 0 ? +(all.workMin   / 60).toFixed(1) : '', all.cost   > 0 ? all.cost   : '',
         ...monthPhaseCols, ...allPhaseCols,
@@ -946,8 +1006,8 @@ function appendToProductReport(reportSS, logRows, scheduleRows, startDate, endDa
     const bgColor = monthIndex % 2 === 1 ? '#E3F2FD' : '#FFFFFF';
     sheet.getRange(insertRow, 1, newRows.length, HEADERS.length).setValues(newRows);
     sheet.getRange(insertRow, 1, newRows.length, HEADERS.length).setBackground(bgColor);
-    sheet.getRange(insertRow, 8,  newRows.length, 1).setNumberFormat('#,##0');
-    sheet.getRange(insertRow, 10, newRows.length, 1).setNumberFormat('#,##0');
+    sheet.getRange(insertRow, 9,  newRows.length, 1).setNumberFormat('#,##0');
+    sheet.getRange(insertRow, 11, newRows.length, 1).setNumberFormat('#,##0');
   }
 
   sheet.setFrozenRows(1);
@@ -961,7 +1021,7 @@ function appendToProductReport(reportSS, logRows, scheduleRows, startDate, endDa
 function appendToProductWorkerReport(reportSS, logRows, scheduleRows, startDate, endDate, label) {
   const PHASE_KEYS = DETAIL_PHASE_KEYS;
   const HEADERS = [
-    '年月', '企画名', '製品名', '職人名',
+    '年月', '企画名', '製品名', '区分', '職人名',
     '月内工数(h)', '月内労務費(円)', '累計工数(h)', '累計労務費(円)',
     ...PHASE_KEYS.map(p => '月内_' + p + '(h)'), '月内_その他(h)',
     ...PHASE_KEYS.map(p => '累計_' + p + '(h)'), '累計_その他(h)',
@@ -987,6 +1047,7 @@ function appendToProductWorkerReport(reportSS, logRows, scheduleRows, startDate,
     if (prod && plan) productPlanMap.set(prod, plan);
   }
 
+  const catMap = getProductCategoryMap_();
   const allSampleLogs   = logRows.filter(r => r[L.type] === 'サンプル製造');
   const monthSampleLogs = allSampleLogs.filter(r => { const d = toDate(r[L.date]); return d && d >= startDate && d <= endDate; });
 
@@ -997,10 +1058,11 @@ function appendToProductWorkerReport(reportSS, logRows, scheduleRows, startDate,
       const worker  = r[L.worker]  || '';
       if (!product || !worker) continue;
       const key = product + '\t' + worker;
-      if (!map.has(key)) map.set(key, { workMin: 0, cost: 0, phaseMin: new Map() });
+      if (!map.has(key)) map.set(key, { workMin: 0, cost: 0, phaseMin: new Map(), category: '' });
       const e = map.get(key);
       e.workMin += Number(r[L.workMin])   || 0;
       e.cost    += Number(r[L.laborCost]) || 0;
+      if (r[L.category]) e.category = r[L.category];
       const ph = r[L.phase] || '';
       const pk = PHASE_KEYS.includes(ph) ? ph : 'その他';
       e.phaseMin.set(pk, (e.phaseMin.get(pk) || 0) + (Number(r[L.workMin]) || 0));
@@ -1016,11 +1078,12 @@ function appendToProductWorkerReport(reportSS, logRows, scheduleRows, startDate,
     .map(key => {
       const [product, worker] = key.split('\t');
       const month = monthMap.get(key);
-      const all   = allMap.get(key) || { workMin: 0, cost: 0, phaseMin: new Map() };
+      const all   = allMap.get(key) || { workMin: 0, cost: 0, phaseMin: new Map(), category: '' };
+      const category = all.category === '販促' || (!all.category && catMap.get(product) === '販促') ? '販促' : '製品';
       const monthPhaseCols = [...PHASE_KEYS, 'その他'].map(ph => { const m = month.phaseMin.get(ph) || 0; return m > 0 ? +(m / 60).toFixed(1) : ''; });
       const allPhaseCols   = [...PHASE_KEYS, 'その他'].map(ph => { const m = all.phaseMin.get(ph)   || 0; return m > 0 ? +(m / 60).toFixed(1) : ''; });
       return [
-        label, productPlanMap.get(product) || '', product, worker,
+        label, productPlanMap.get(product) || '', product, category, worker,
         month.workMin > 0 ? +(month.workMin / 60).toFixed(1) : '', month.cost > 0 ? month.cost : '',
         all.workMin   > 0 ? +(all.workMin   / 60).toFixed(1) : '', all.cost   > 0 ? all.cost   : '',
         ...monthPhaseCols, ...allPhaseCols,
@@ -1035,8 +1098,8 @@ function appendToProductWorkerReport(reportSS, logRows, scheduleRows, startDate,
     const bgColor = monthIndex % 2 === 1 ? '#E3F2FD' : '#FFFFFF';
     sheet.getRange(insertRow, 1, newRows.length, HEADERS.length).setValues(newRows);
     sheet.getRange(insertRow, 1, newRows.length, HEADERS.length).setBackground(bgColor);
-    sheet.getRange(insertRow, 6, newRows.length, 1).setNumberFormat('#,##0');
-    sheet.getRange(insertRow, 8, newRows.length, 1).setNumberFormat('#,##0');
+    sheet.getRange(insertRow, 7, newRows.length, 1).setNumberFormat('#,##0');
+    sheet.getRange(insertRow, 9, newRows.length, 1).setNumberFormat('#,##0');
   }
 
   sheet.setFrozenRows(1);
@@ -1265,7 +1328,7 @@ function run202605() { generateMonthlyReportForMonth(2026, 5); }
 
 // ⑧製品×職人別を単月だけ試し生成するラッパー
 function runProductWorker202605() {
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       18);
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       19);
   const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
   const reportSS     = getOrCreateReportSS();
   const startDate    = new Date(2026, 4,  1,  0,  0,  0,   0);
@@ -1275,8 +1338,13 @@ function runProductWorker202605() {
 
 function run202606() { generateMonthlyReportForMonth(2026, 6); }
 
+// 7月分を月の途中で先取り集計する場合に実行（注意：実行すると8/1の自動実行は
+// 「2026年07月は既存」としてスキップされるため、月末に③〜⑧の2026年07月の行を
+// 削除してから run202607() を再実行して確定させること）
+function run202607() { generateMonthlyReportForMonth(2026, 7); }
+
 function runProductWorker202606() {
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       18);
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       19);
   const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
   const reportSS     = getOrCreateReportSS();
   const startDate    = new Date(2026, 5,  1,  0,  0,  0,   0);
@@ -1321,8 +1389,15 @@ function getSheetData(ssId, sheetName, cols, startRow) {
 // 集計SS取得（なければ新規作成）
 // ================================================================
 function getOrCreateReportSS() {
+  // ID直指定が最優先（名前変更・同名ファイルの影響を受けない）
+  if (REPORT_CONFIG.reportSSId) return SpreadsheetApp.openById(REPORT_CONFIG.reportSSId);
+
+  // 予備：名前検索。スクリプトプロジェクトも同名のことがあるため、スプレッドシートのみを対象にする
   const files = DriveApp.getFilesByName(REPORT_CONFIG.reportSSName);
-  if (files.hasNext()) return SpreadsheetApp.open(files.next());
+  while (files.hasNext()) {
+    const f = files.next();
+    if (f.getMimeType() === MimeType.GOOGLE_SHEETS) return SpreadsheetApp.open(f);
+  }
   const ss = SpreadsheetApp.create(REPORT_CONFIG.reportSSName);
   Logger.log('集計SS新規作成: ' + ss.getUrl());
   return ss;
@@ -1559,6 +1634,7 @@ function createUsageGuideDoc() {
   addTable([
     ['見るポイント', '活用例'],
     ['月内工数(h) vs 累計工数(h)', '今月特定ブランドに集中していないか確認。工数(h)は時間量を表す'],
+    ['月内_製品(h)・月内_販促(h)', '製品開発と販促物（ショート動画等）の工数内訳。労務費の配賦先を分ける判断に使う'],
     ['担当者（全期間）', '全期間を通してそのブランドに携わった職人が一覧できる'],
   ]);
   addItalic('工数(h)はそのブランドに費やした時間の合計。人工は「何人が何日関わったか」の頭数。両方をセットで見ることでリソース配分をより正確に把握できます。');
@@ -1579,6 +1655,16 @@ function createUsageGuideDoc() {
   addItalic('「この企画、なぜ時間がかかったか」の分析起点になるシート。型紙作成 vs 仮制作の比率を企画間で比べることで、工程ごとのボトルネックが見える。');
   addItalic('【記入ルール】裁断は各サンプルフェーズ（モック・ファーストなど）の開始時に行う作業です。裁断の時間は別フェーズとして記録せず、そのサンプルフェーズの作業時間に含めて入力してください。');
   body.appendParagraph('');
+
+  // ⑦ 製品別
+  addHeading('⑦ 製品別（青緑タブ）', H2);
+  addText('製品ごとにチーム合計で何時間・どのフェーズに使ったか（月次追記）。1行 = 製品1件 × 1ヶ月。⑥企画別より細かく、⑧製品×職人別を職人でまとめた粒度。');
+  addTable([
+    ['見るポイント', '活用例'],
+    ['区分', '「製品」か「販促」か。販促物の工数を除外して製品開発の実力値を見る'],
+    ['月内_各フェーズ列', '製品ごとに今月どのフェーズに時間を使ったかが見える'],
+    ['担当人数・担当者（累計）', 'その製品に関わった人数と顔ぶれ'],
+  ]);
 
   // ⑧ 製品×職人別
   addHeading('⑧ 製品×職人別（橙タブ）', H2);
@@ -1612,6 +1698,7 @@ function createUsageGuideDoc() {
     ['作業時間の入力ミス（分単位）', '全シート', '工数・労務費がすべてズレる'],
     ['企画名が空欄', '⑥', 'その企画への工数が集計されない'],
     ['職人名の表記ゆれ', '②④', '同一人物が別人として2行で集計される'],
+    ['製品/販促区分の設定ミス（製品管理）', '⑤⑥⑦⑧', '製品/販促の内訳が実態と合わなくなる'],
   ]);
 
   addHeading('調べ方（GASエディタから実行）', H3);
@@ -1660,6 +1747,7 @@ function createUsageGuideDoc() {
     ['労務費(円)', '作業時間(分) × 42円（間接費込み概算）。提出時に自動計算してログに保存済み'],
     ['人工', '職人×日付のユニーク組み合わせ数。1人が1日日報を提出すれば1人工'],
     ['突合', '日報の製品名とスケジュールSSの製品名・企画名を照合すること'],
+    ['製品/販促区分', '製品マスタ（設定→製品管理）で選択した区分。日報提出時にログへ記録。区分が空の過去ログは現在の製品マスタから補完し、不明なものは「製品」扱い'],
   ]);
 
   addHeading('① 週次推移', H3);
@@ -1734,8 +1822,10 @@ function createUsageGuideDoc() {
     ['企画数', 'そのブランドに紐づく企画数（累計・全期間のユニーク企画名数）'],
     ['製品数', 'そのブランドに紐づく製品数（累計・全期間のユニーク製品名数）'],
     ['月内工数(h)', '当月のそのブランドへの作業時間(分)合計 ÷ 60'],
+    ['月内_製品(h)・月内_販促(h)', '月内工数(h)の製品/販促区分別の内訳（0の場合は空欄）'],
     ['月内労務費(円)', '当月の労務費合計'],
     ['累計工数(h)', '全期間のそのブランドへの作業時間(分)合計 ÷ 60'],
+    ['累計_製品(h)・累計_販促(h)', '累計工数(h)の製品/販促区分別の内訳（0の場合は空欄）'],
     ['累計労務費(円)', '全期間の労務費合計'],
     ['担当者（全期間）', '全期間を通してそのブランドに関わった職人名（「、」区切り）'],
   ]);
@@ -1751,8 +1841,10 @@ function createUsageGuideDoc() {
     ['ブランド', 'スケジュールSSから逆引き'],
     ['製品名', 'その企画に紐づいた全製品名（「、」区切り、全期間）'],
     ['月内工数(h)', '当月の作業時間(分)合計 ÷ 60'],
+    ['月内_製品(h)・月内_販促(h)', '月内工数(h)の製品/販促区分別の内訳（0の場合は空欄）'],
     ['月内労務費(円)', '当月の労務費合計'],
     ['累計工数(h)', '全期間の作業時間(分)合計 ÷ 60'],
+    ['累計_製品(h)・累計_販促(h)', '累計工数(h)の製品/販促区分別の内訳（0の場合は空欄）'],
     ['累計労務費(円)', '全期間の労務費合計'],
     ['担当者（月内）', '当月に関わった職人名'],
     ['担当者（累計）', '全期間に関わった職人名'],
@@ -1768,6 +1860,21 @@ function createUsageGuideDoc() {
     ['累計_型紙・抜き型〜工程表(h)', '全期間版のフェーズ中分類内訳（5列）。企画間比較の主役'],
   ]);
 
+  addHeading('⑦ 製品別', H3);
+  addText('月次追記。製品ごとに1行（チーム合計）。当月に動きがあった製品のみ追記。');
+  addTable([
+    ['列名', '計算内容'],
+    ['年月', '例：「2026年05月」'],
+    ['企画名', 'スケジュールSSから製品名で逆引き（なければ日報の企画名）'],
+    ['ブランド', 'スケジュールSSから逆引き'],
+    ['製品名', '日報に記入された製品名'],
+    ['区分', '「製品」または「販促」。日報ログの区分（空欄は製品マスタから補完、不明は「製品」）'],
+    ['担当人数・担当者（累計）', '全期間でその製品に関わった職人の人数と名前'],
+    ['月内工数(h)・月内労務費(円)', '当月のその製品への作業時間(分)合計 ÷ 60 と労務費合計'],
+    ['累計工数(h)・累計労務費(円)', '全期間版'],
+    ['月内_各フェーズ(h)・累計_各フェーズ(h)', 'フェーズ大分類別の作業時間内訳 ÷ 60'],
+  ]);
+
   addHeading('⑧ 製品×職人別', H3);
   addText('月次追記。製品×職人の組み合わせで1行。当月に動きがあったもののみ追記。');
   addTable([
@@ -1775,6 +1882,7 @@ function createUsageGuideDoc() {
     ['年月', '例：「2026年05月」'],
     ['企画名', 'スケジュールSSから製品名で逆引き'],
     ['製品名', '日報に記入された製品名'],
+    ['区分', '「製品」または「販促」。⑦と同じルールで判定'],
     ['職人名', '日報に記入された職人名'],
     ['月内工数(h)', '当月のその製品×職人の作業時間(分)合計 ÷ 60'],
     ['月内労務費(円)', '当月の労務費合計'],

@@ -50,10 +50,10 @@ function setup() {
     s.setColumnWidth(5, 150);
     s.setColumnWidth(6, 200);
   } else if (s.getLastColumn() < 6) {
-    // 既存シートに製品or販促列を追加
-    s.getRange(1, 3).setValue('製品or販促');
+    // 既存シートに製品or販促列を追加（先に列を挿入してからヘッダーと既定値を書く）
     s.insertColumns(3, 1);
-    s.getRange(2, 3, s.getLastRow()-1, 1).setValue('製品');
+    s.getRange(1, 3).setValue('製品or販促');
+    if (s.getLastRow() > 1) s.getRange(2, 3, s.getLastRow()-1, 1).setValue('製品');
   }
 
   // ステージマスター（フェーズ大分類）
@@ -375,6 +375,35 @@ function addSchedule(name, category, season, brand, plan) {
   return { success:true, message:`「${name}」を追加しました。` };
 }
 function deleteSchedule(name) { return delRow(SHEETS.SCHEDULES, 2, name); }
+
+// ================================================================
+// スケジュールシートの列ずれ修復（GASエディタから1回のみ実行）
+// 「製品or販促」列の追加後、旧バージョンのデプロイから登録・修正された行は
+// C列にシーズン値が入るなど1列ずれて保存されている。該当行を右に1列ずらして
+// C列を「製品」に戻し、ヘッダーも正しい並びに直す。
+// ================================================================
+function fixScheduleCategoryColumn() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const s  = ss.getSheetByName(SHEETS.SCHEDULES);
+  if (!s) { Logger.log('スケジュールシートが見つかりません'); return; }
+
+  // ヘッダーを正しい並びに強制（列追加バグでC1が空・D1が製品or販促になっている場合も直る）
+  s.getRange(1, 1, 1, 6).setValues([['ID', '製品名', '製品or販促', 'シーズン・型振・VMD', 'ブランド', '企画名']]);
+
+  if (s.getLastRow() <= 1) { Logger.log('データ行なし'); return; }
+  const rows = s.getRange(2, 1, s.getLastRow() - 1, 6).getValues();
+  let fixed = 0;
+  rows.forEach((r, i) => {
+    if (!r[1]) return;
+    const c = String(r[2] || '').trim();
+    if (c === '' || c === '製品' || c === '販促') return;  // 正常な行
+    // C列に区分以外の値が入っている＝1列ずれ行。右に1列ずらして修復
+    s.getRange(i + 2, 3, 1, 4).setValues([['製品', r[2], r[3], r[4]]]);
+    fixed++;
+    Logger.log('修復: ' + r[1] + '（区分列の値「' + c + '」をシーズンへ移動）');
+  });
+  Logger.log('fixScheduleCategoryColumn 完了: ' + fixed + '行を修復（修復後、販促物は製品管理から「販促」に設定し直してください）');
+}
 
 function updateSchedule(origName, name, category, season, brand, plan) {
   if (!name) return { success:false, message:'製品名を入力してください。' };

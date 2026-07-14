@@ -569,6 +569,7 @@ function generateMonthlyReportForMonth(year, month) {
   appendToProductReport(reportSS, logRows, scheduleRows, startDate, endDate, label);
   appendToProductWorkerReport(reportSS, logRows, scheduleRows, startDate, endDate, label);
   appendToWorkerMonthly(reportSS, logRows, startDate, endDate, label);
+  buildAllSummarySheets(reportSS, logRows, scheduleRows, year, month);
 
   Logger.log(label + ' 月次レポート完了: ' + reportSS.getUrl());
 }
@@ -1249,6 +1250,294 @@ function appendToWorkerMonthly(reportSS, logRows, startDate, endDate, label) {
 }
 
 // ================================================================
+// ⓪ 試作課 日報サマリー（毎月上書き型ダッシュボード）
+//
+// 目的：試作課の日報データをもとに、試作課が「何に」「どれくらい時間を使い」
+// 「今どのような状況なのか」を誰でも数分で理解できるようにする。
+// 評価や監視ではなく、活動状況の共有・可視化が目的。
+//
+// 表現ルール（2026-07-14 方針決定）：
+// ・「超過」「異常」「問題案件」など断定的な表現は使わない（標準工数が未設定のため）
+// ・色は評価色（赤黄緑）ではなく青の濃淡（濃い青=工数上位20%、薄い青=20〜40%）
+// ・赤は未入力・データ不整合など客観的な異常のみに限定
+// ・担当者別は「稼働状況」と表記し、効率・生産性の比較にしない
+// ================================================================
+const SUMMARY_SHEET_NAME       = '⓪日報サマリー';    // 製品のみ
+const SUMMARY_PROMO_SHEET_NAME = '⓪販促サマリー';    // 販促のみ
+const SUMMARY_COLS       = 8;
+const SUMMARY_BLUE_DARK  = '#1565C0';  // 工数上位20%
+const SUMMARY_BLUE_LIGHT = '#64B5F6';  // 上位20〜40%
+const SUMMARY_GRAY       = '#B0BEC5';  // その他
+
+function generateSummarySheet(year, month) {
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       19);
+  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
+  buildAllSummarySheets(getOrCreateReportSS(), logRows, scheduleRows, year, month);
+}
+
+// 単月を手動で生成/更新するラッパー（上書き型なので何度実行してもOK。月の途中でも安全）
+function runSummary202606() { generateSummarySheet(2026, 6); }
+function runSummary202607() { generateSummarySheet(2026, 7); }
+
+// 製品サマリーと販促サマリーの2枚を生成する
+function buildAllSummarySheets(reportSS, logRows, scheduleRows, year, month) {
+  buildSummarySheet(reportSS, logRows, scheduleRows, year, month, {
+    sheetName: SUMMARY_SHEET_NAME,
+    category:  '製品',
+    title:     '試作課 日報サマリー',
+    note:      '試作課が製品開発に「何に・どれくらい時間を使い・今どんな状況か」を共有するためのシートです（評価や監視を目的としたものではありません。販促物は「⓪販促サマリー」へ）',
+    tabColor:  SUMMARY_BLUE_DARK,
+    position:  0,
+  });
+  buildSummarySheet(reportSS, logRows, scheduleRows, year, month, {
+    sheetName: SUMMARY_PROMO_SHEET_NAME,
+    category:  '販促',
+    title:     '試作課 販促サマリー',
+    note:      '販促物（ショート動画・撮影用制作など）に使った時間のサマリーです（評価や監視を目的としたものではありません）',
+    tabColor:  '#E65100',
+    position:  1,
+  });
+}
+
+function buildSummarySheet(reportSS, logRows, scheduleRows, year, month, opts) {
+  const category = opts.category;
+  const label     = year + '年' + String(month).padStart(2, '0') + '月';
+  const startDate = new Date(year, month - 1, 1);
+  const endDate   = new Date(year, month,     0, 23, 59, 59, 999);
+  const prevStart = new Date(year, month - 2, 1);
+  const prevEnd   = new Date(year, month - 1, 0, 23, 59, 59, 999);
+
+  const catMap  = getProductCategoryMap_();
+  const inRange = (r, s, e) => { const d = toDate(r[L.date]); return d && d >= s && d <= e; };
+
+  // 対象区分（製品 or 販促）のサンプル製造ログだけを集計対象にする
+  const isTarget = r => r[L.type] === 'サンプル製造' && logCategory_(r, catMap) === category;
+  const monthLogs   = logRows.filter(r => inRange(r, startDate, endDate));
+  const prevLogs    = logRows.filter(r => inRange(r, prevStart, prevEnd));
+  const monthSample = monthLogs.filter(isTarget);
+  const prevSample  = prevLogs.filter(isTarget);
+  const allSample   = logRows.filter(isTarget);
+
+  // ---- 集計 ------------------------------------------------------
+  // 対象区分の工数・労務費・案件数・人数 ＋ 参考として課全体の総工数と間接
+  function calcKpi(sample, logs) {
+    return {
+      min:      colSum(sample, L.workMin),
+      cost:     colSum(sample, L.laborCost),
+      products: new Set(sample.map(r => r[L.product]).filter(Boolean)).size,
+      workers:  new Set(sample.map(r => r[L.worker]).filter(Boolean)).size,
+      deptMin:  colSum(logs, L.workMin),
+      indMin:   colSum(logs.filter(r => r[L.type] !== 'サンプル製造'), L.workMin),
+    };
+  }
+  const cur  = calcKpi(monthSample, monthLogs);
+  const prev = calcKpi(prevSample,  prevLogs);
+
+  // 製品別（月内）
+  const prodMonth = new Map();
+  for (const r of monthSample) {
+    const p = r[L.product] || '';
+    if (!p) continue;
+    if (!prodMonth.has(p)) prodMonth.set(p, { min: 0, workers: new Set() });
+    const e = prodMonth.get(p);
+    e.min += Number(r[L.workMin]) || 0;
+    if (r[L.worker]) e.workers.add(r[L.worker]);
+  }
+
+  // 製品別（累計）・現在工程（直近の日報のフェーズ）・企画名
+  const prodAllMin  = new Map();
+  const prodLastLog = new Map();
+  const prodPlan    = new Map();
+  for (const r of allSample) {
+    const p = r[L.product] || '';
+    if (!p) continue;
+    prodAllMin.set(p, (prodAllMin.get(p) || 0) + (Number(r[L.workMin]) || 0));
+    const d = toDate(r[L.date]);
+    if (d && (!prodLastLog.has(p) || d > prodLastLog.get(p).time)) prodLastLog.set(p, { time: d, phase: r[L.phase] || '' });
+    if (r[L.planName] && !prodPlan.has(p)) prodPlan.set(p, r[L.planName]);
+  }
+  for (const s of scheduleRows) {
+    if (s[S.product] && s[S.planName]) prodPlan.set(s[S.product], s[S.planName]);
+  }
+  const nameOf = p => (prodPlan.get(p) ? prodPlan.get(p) + '｜' : '') + p;
+
+  // 工程別（月内）
+  const PHASE_GROUPS = [
+    { name: 'モック',         keys: ['モック'] },
+    { name: '1st',            keys: ['1st'] },
+    { name: '2nd',            keys: ['2nd'] },
+    { name: '3rd以降',        keys: ['3rd', '4th', '5th'] },
+    { name: '最終',           keys: ['最終'] },
+    { name: '色増しサンプル', keys: ['色増しサンプル'] },
+  ];
+  const phaseMin = new Map();
+  for (const r of monthSample) {
+    const ph  = r[L.phase] || '';
+    const g   = PHASE_GROUPS.find(g => g.keys.includes(ph));
+    const key = g ? g.name : 'その他';
+    phaseMin.set(key, (phaseMin.get(key) || 0) + (Number(r[L.workMin]) || 0));
+  }
+  const phaseRows = [...PHASE_GROUPS.map(g => g.name), 'その他']
+    .map(name => ({ name, min: phaseMin.get(name) || 0 }))
+    .filter(e => e.min > 0);
+
+  // 担当者別（月内・製造）
+  const workerMap = new Map();
+  for (const r of monthSample) {
+    const w = r[L.worker] || '';
+    if (!w) continue;
+    if (!workerMap.has(w)) workerMap.set(w, { min: 0, products: new Set() });
+    const e = workerMap.get(w);
+    e.min += Number(r[L.workMin]) || 0;
+    if (r[L.product]) e.products.add(r[L.product]);
+  }
+
+  // ---- 表示ヘルパー ----------------------------------------------
+  const fmtH  = min => +(min / 60).toFixed(1);
+  const comma = n => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const barTx = (val, max, width) => (max > 0 && val > 0) ? '█'.repeat(Math.max(1, Math.round(val / max * width))) : '';
+  const deltaStr = (c, p, unit, isMoney) => {
+    const d = c - p;
+    if (Math.abs(d) < 0.05) return '前月比 ±0';
+    const v = isMoney ? comma(Math.abs(d)) : String(Math.abs(+d.toFixed(1)));
+    return '前月比 ' + (d > 0 ? '＋' : '−') + v + unit;
+  };
+  const rankColor = (i, n) => i < Math.ceil(n * 0.2) ? SUMMARY_BLUE_DARK : i < Math.ceil(n * 0.4) ? SUMMARY_BLUE_LIGHT : SUMMARY_GRAY;
+
+  // ---- シート初期化（💬トピック欄の手入力は同じ月の再生成なら保持）----
+  let sheet = reportSS.getSheetByName(opts.sheetName);
+  let savedTopic = '';
+  if (sheet) {
+    const sameMonth = String(sheet.getRange(1, 1).getValue() || '').includes(label);
+    const hit = sheet.createTextFinder('💬 今月のトピック').findNext();
+    if (hit && sameMonth) savedTopic = String(sheet.getRange(hit.getRow() + 1, 1).getValue() || '');
+    sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).breakApart();
+    sheet.clear();
+  } else {
+    sheet = reportSS.insertSheet(opts.sheetName, opts.position);
+  }
+  sheet.setTabColor(opts.tabColor);
+  sheet.setHiddenGridlines(true);
+
+  const sectionHeader = (r, title) => sheet.getRange(r, 1, 1, SUMMARY_COLS).merge().setValue(title)
+    .setFontWeight('bold').setFontSize(11).setBackground('#455A64').setFontColor('#FFFFFF');
+  const noteRow = (r, text) => sheet.getRange(r, 1, 1, SUMMARY_COLS).merge().setValue(text)
+    .setFontSize(8).setFontColor('#90A4AE');
+
+  // ---- タイトル ---------------------------------------------------
+  sheet.getRange(1, 1, 1, SUMMARY_COLS).merge()
+    .setValue(opts.title + '（' + label + '）').setFontSize(16).setFontWeight('bold');
+  sheet.getRange(2, 1, 1, SUMMARY_COLS).merge()
+    .setValue(opts.note)
+    .setFontSize(9).setFontColor('#78909C');
+  let row = 4;
+
+  // ---- 📦 今月の活動（KPIカード）----------------------------------
+  sectionHeader(row, '📦 今月の活動（' + category + '）'); row++;
+  const kpis = [
+    [category + '工数',        fmtH(cur.min) + 'h',      deltaStr(fmtH(cur.min), fmtH(prev.min), 'h')],
+    ['労務費（' + category + '）', '¥' + comma(cur.cost), deltaStr(cur.cost, prev.cost, '円', true)],
+    ['稼働案件', cur.products + '件', deltaStr(cur.products, prev.products, '件')],
+    ['担当人数', cur.workers + '名',  deltaStr(cur.workers, prev.workers, '名')],
+    ['課全体 総工数（参考）', fmtH(cur.deptMin) + 'h', deltaStr(fmtH(cur.deptMin), fmtH(prev.deptMin), 'h')],
+    ['うち間接（参考）',      fmtH(cur.indMin) + 'h',  deltaStr(fmtH(cur.indMin),  fmtH(prev.indMin),  'h')],
+  ];
+  kpis.forEach((k, i) => {
+    const c = i + 1;
+    sheet.getRange(row,     c).setValue(k[0]).setFontSize(9).setFontColor('#78909C');
+    sheet.getRange(row + 1, c).setValue(k[1]).setFontSize(15).setFontWeight('bold');
+    sheet.getRange(row + 2, c).setValue(k[2]).setFontSize(8).setFontColor('#90A4AE');
+  });
+  row += 4;
+
+  // ---- 📈 案件別工数 TOP10 -----------------------------------------
+  sectionHeader(row, '📈 案件別工数 TOP10（月内・' + category + '）'); row++;
+  const top = [...prodMonth.entries()].sort((a, b) => b[1].min - a[1].min).slice(0, 10);
+  if (top.length === 0) { noteRow(row, '該当月の' + category + 'の日報がありません'); row++; }
+  const topMax = top.length ? top[0][1].min : 0;
+  top.forEach(([p, e], i) => {
+    sheet.getRange(row, 1, 1, 3).merge().setValue(nameOf(p)).setFontSize(10);
+    sheet.getRange(row, 4, 1, 3).merge().setValue(barTx(e.min, topMax, 24)).setFontColor(rankColor(i, top.length)).setFontSize(10);
+    sheet.getRange(row, 7).setValue(fmtH(e.min) + 'h').setHorizontalAlignment('right')
+      .setFontWeight(i < Math.ceil(top.length * 0.2) ? 'bold' : 'normal');
+    row++;
+  });
+  noteRow(row, '※ 濃い青＝工数上位20％、薄い青＝上位20〜40％。工数の大小は事実の共有であり、良し悪しの評価ではありません');
+  row += 2;
+
+  // ---- 🛠 工程別の時間配分 -----------------------------------------
+  sectionHeader(row, '🛠 工程別の時間配分（月内）'); row++;
+  const phaseTotal = phaseRows.reduce((a, e) => a + e.min, 0);
+  const phaseMax   = phaseRows.reduce((a, e) => Math.max(a, e.min), 0);
+  if (phaseRows.length === 0) { noteRow(row, '該当月のデータがありません'); row++; }
+  phaseRows.forEach(e => {
+    const share = phaseTotal > 0 ? Math.round(e.min / phaseTotal * 100) : 0;
+    sheet.getRange(row, 1).setValue(e.name).setFontSize(10);
+    sheet.getRange(row, 4, 1, 3).merge().setValue(barTx(e.min, phaseMax, 24)).setFontColor(SUMMARY_BLUE_DARK).setFontSize(10);
+    sheet.getRange(row, 7).setValue(fmtH(e.min) + 'h').setHorizontalAlignment('right');
+    sheet.getRange(row, 8).setValue(share + '%').setFontSize(9).setFontColor('#78909C').setHorizontalAlignment('right');
+    row++;
+  });
+  row++;
+
+  // ---- 👥 担当者別稼働状況 -----------------------------------------
+  sectionHeader(row, '👥 担当者別稼働状況（' + category + '・体制の共有が目的。効率や生産性の比較ではありません）'); row++;
+  sheet.getRange(row, 1, 1, 4).setValues([['担当者', category + '工数(h)', '担当案件数', '1案件平均(h)']])
+    .setFontSize(9).setFontColor('#78909C');
+  row++;
+  const workers = [...workerMap.entries()].sort((a, b) => b[1].min - a[1].min);
+  const wMax = workers.length ? workers[0][1].min : 0;
+  workers.forEach(([w, e]) => {
+    sheet.getRange(row, 1).setValue(w).setFontSize(10);
+    sheet.getRange(row, 2).setValue(fmtH(e.min)).setHorizontalAlignment('right');
+    sheet.getRange(row, 3).setValue(e.products.size).setHorizontalAlignment('right');
+    sheet.getRange(row, 4).setValue(e.products.size > 0 ? +(fmtH(e.min) / e.products.size).toFixed(1) : '').setHorizontalAlignment('right');
+    sheet.getRange(row, 5, 1, 4).merge().setValue(barTx(e.min, wMax, 20)).setFontColor(SUMMARY_BLUE_LIGHT).setFontSize(10);
+    row++;
+  });
+  row++;
+
+  // ---- 📋 案件一覧 --------------------------------------------------
+  sectionHeader(row, '📋 案件一覧（月内に日報のあった' + category + '案件）'); row++;
+  sheet.getRange(row, 1, 1, 2).merge().setValue('企画｜製品').setFontSize(9).setFontColor('#78909C');
+  sheet.getRange(row, 3).setValue('今月(h)').setFontSize(9).setFontColor('#78909C');
+  sheet.getRange(row, 4).setValue('累計(h)').setFontSize(9).setFontColor('#78909C');
+  sheet.getRange(row, 5).setValue('現在工程').setFontSize(9).setFontColor('#78909C');
+  sheet.getRange(row, 6, 1, 3).merge().setValue('担当者（月内）').setFontSize(9).setFontColor('#78909C');
+  row++;
+  const list = [...prodMonth.entries()].sort((a, b) => b[1].min - a[1].min);
+  list.forEach(([p, e], i) => {
+    if (i < Math.ceil(list.length * 0.2)) sheet.getRange(row, 1, 1, SUMMARY_COLS).setBackground('#E3F2FD');
+    sheet.getRange(row, 1, 1, 2).merge().setValue(nameOf(p)).setFontSize(10);
+    sheet.getRange(row, 3).setValue(fmtH(e.min)).setHorizontalAlignment('right');
+    sheet.getRange(row, 4).setValue(fmtH(prodAllMin.get(p) || 0)).setHorizontalAlignment('right');
+    sheet.getRange(row, 5).setValue(prodLastLog.has(p) ? prodLastLog.get(p).phase : '').setFontSize(9);
+    sheet.getRange(row, 6, 1, 3).merge().setValue([...e.workers].join('、')).setFontSize(9);
+    row++;
+  });
+  noteRow(row, '※ 濃色の行＝今月工数の上位20％。現在工程は直近の日報のフェーズです');
+  row += 2;
+
+  // ---- 💬 今月のトピック（手入力欄）--------------------------------
+  sectionHeader(row, '💬 今月のトピック（手入力欄）'); row++;
+  const topicCell = sheet.getRange(row, 1, 4, SUMMARY_COLS).merge()
+    .setBackground('#FFFDE7').setVerticalAlignment('top').setWrap(true).setFontSize(10);
+  if (savedTopic) {
+    topicCell.setValue(savedTopic);
+  } else {
+    topicCell.setValue('（数字だけでは伝わらない背景をここにメモ。例：新メンズラインが本格始動／撮影用オブジェ制作／型修正案件が増加。同じ月の再生成では消えません）')
+      .setFontColor('#B0A660').setFontStyle('italic');
+  }
+
+  // ---- 仕上げ -------------------------------------------------------
+  sheet.setColumnWidth(1, 210);
+  sheet.setColumnWidths(2, SUMMARY_COLS - 1, 100);
+  reportSS.setActiveSheet(sheet);
+  reportSS.moveActiveSheet(opts.position + 1);
+  Logger.log(opts.sheetName + ' 更新完了（' + label + '）');
+}
+
+// ================================================================
 // バックフィル：指定開始日から7日ごとに週次レポートをまとめて生成
 // ================================================================
 function generateWeeklyReportBackfill() {
@@ -1291,7 +1580,7 @@ function generateWeeklyReportBackfill() {
 // ================================================================
 function reorderSheets() {
   const ss = getOrCreateReportSS();
-  const order = ['①週次推移', '②職人別週次', '③月別推移', '④職人別月次', '⑤ブランド別', '⑥企画別', '⑦製品別', '⑧製品×職人別'];
+  const order = ['⓪日報サマリー', '⓪販促サマリー', '①週次推移', '②職人別週次', '③月別推移', '④職人別月次', '⑤ブランド別', '⑥企画別', '⑦製品別', '⑧製品×職人別'];
   order.forEach((name, i) => {
     const sheet = ss.getSheetByName(name);
     if (sheet) { ss.setActiveSheet(sheet); ss.moveActiveSheet(i + 1); }
@@ -1584,6 +1873,20 @@ function createUsageGuideDoc() {
   addText('【労務費とは】作業時間(分) × 42円（間接費込み概算）で算出した人件費の概算額です。日報提出時に自動計算されてログに保存されます。');
   addText('【人工とは】「何人が何日関わったか」を表す単位。1人が1日出勤して日報を提出すれば1人工。工数(h)は時間の量、人工は頭数×日数を表すため、両方をセットで見るとリソース配分をより正確に把握できます。');
   body.appendParagraph('');
+
+  // ⓪ 日報サマリー
+  addHeading('⓪ 日報サマリー（濃青タブ）／⓪ 販促サマリー（橙タブ）', H2);
+  addText('試作課が「何に・どれくらい時間を使い・今どんな状況か」を誰でも数分で理解できるようにする共有用ダッシュボード。製品開発は「⓪日報サマリー」、販促物（ショート動画・撮影用制作など）は「⓪販促サマリー」に分けて表示する。毎月1日の自動実行で前月分に更新される（runSummary2026XX() で2枚とも手動更新可能。上書き型なので月の途中でも安全）。');
+  addTable([
+    ['セクション', '内容'],
+    ['📦 今月の活動', '対象区分の工数・労務費・稼働案件数・担当人数＋参考として課全体総工数・間接のKPIカード（前月比付き）'],
+    ['📈 案件別工数 TOP10', '月内工数の横棒ランキング。濃い青=上位20%、薄い青=20〜40%（評価ではなく事実の共有）'],
+    ['🛠 工程別の時間配分', 'モック/1st/2nd/3rd以降/最終/色増し/その他の時間配分と構成比'],
+    ['👥 担当者別稼働状況', '体制の共有が目的。効率・生産性の比較には使わない'],
+    ['📋 案件一覧', '月内に日報のあった案件の今月/累計工数・現在工程・担当者'],
+    ['💬 今月のトピック', '手入力欄。数字だけでは伝わらない背景をメモ（同じ月の再生成では消えない）'],
+  ]);
+  addItalic('表現ルール：標準工数が未設定のため「超過」「異常」と断定せず、「工数上位」「工数が大きかった案件」など中立的な表現と青の濃淡を使う。赤は未入力・データ不整合など客観的な異常のみ。');
 
   // ① 週次推移
   addHeading('① 週次推移（青タブ）', H2);

@@ -81,6 +81,8 @@ tr:active td{background:#f5fbfb}
 #tab-settings select:focus,#tab-settings input:focus{border-color:#4b5563;box-shadow:0 0 0 3px rgba(75,85,99,.1);background:#fff}
 #tab-settings th{background:#f3f4f6;color:#374151;border-bottom-color:#d1d5db}
 #tab-settings td{border-bottom-color:#e5e7eb}
+/* 設定タブの一覧：長い値は途中で切って「…」表示（ボタン列は除外。全文はPCでマウスを乗せると表示） */
+#tab-settings td:not(:last-child){max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .btn-mono{background:#374151;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.15)}.btn-mono:active{background:#1f2937;transform:scale(.98)}
 .setting-note{font-size:13px;color:#6b7280;background:#f3f4f6;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin-bottom:16px;line-height:1.7}
 #tab-report .card-ttl{font-size:20px}
@@ -1315,7 +1317,7 @@ function addSubcat() {
 function editSchedule(name) {
   const sch = S.schedules.find(s => s.name === name);
   if (!sch) return;
-  document.getElementById('p-category').value = sch.category || '製品';
+  document.getElementById('p-category').value = sch.category === '販促' ? '販促' : '製品';
   document.getElementById('p-name').value   = sch.name;
   document.getElementById('p-season').value = sch.season || '';
   document.getElementById('p-brand').value  = sch.brand  || '';
@@ -1459,11 +1461,11 @@ function renderLists() {
     ? mTable(
         ['製品名','製品/販促','シーズン・型振・VMD','ブランド','企画名'],
         S.schedules.map(s => [
-          `<strong>${esc(s.name)}</strong>`,
-          `<span class="badge ${s.category==='販促'?'b-or':'b-bl'}">${esc(s.category||'製品')}</span>`,
-          esc(s.season) || '—',
-          esc(s.brand)  || '—',
-          esc(s.plan)   || '—',
+          `<strong title="${esc(s.name)}">${esc(s.name)}</strong>`,
+          `<span class="badge ${s.category==='販促'?'b-or':'b-bl'}">${s.category==='販促'?'販促':'製品'}</span>`,
+          s.season ? `<span title="${esc(s.season)}">${esc(s.season)}</span>` : '—',
+          s.brand  ? `<span title="${esc(s.brand)}">${esc(s.brand)}</span>`   : '—',
+          s.plan   ? `<span title="${esc(s.plan)}">${esc(s.plan)}</span>`     : '—',
           `<button class="btn btn-mono btn-sm" onclick="editSchedule('${esc(s.name)}')">修正</button>
            <button class="btn btn-d btn-sm" onclick="delSchedule('${esc(s.name)}')">削除</button>`
         ])

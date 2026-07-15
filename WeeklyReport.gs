@@ -344,11 +344,14 @@ function getSubcatClassMap_() {
   return map;
 }
 
-// ログ1行の時間分類を返す：製作／付帯業務／中分類未入力
+// ログ1行の時間分類を返す：製作／付帯業務／中分類未選択／中分類対象外
+// ・中分類対象外 … 大分類に中分類の選択肢がないフェーズ（試験体・量産・エイジングサンプル・修理・SOP・治具）
+// ・中分類未選択 … 中分類を選べるフェーズで空欄だった時間（2026-06-17の機能追加以前の日報を含む）
 function logSubcatClass_(r, clsMap) {
   const sc = String(r[L.subcat] || '').trim();
-  if (!sc) return '中分類未入力';
-  return clsMap.get(sc) || '中分類未入力';
+  if (sc) return clsMap.get(sc) || '中分類未選択';
+  const phase = String(r[L.phase] || '').trim();
+  return DETAIL_PHASE_KEYS.includes(phase) ? '中分類未選択' : '中分類対象外';
 }
 
 // 集計期間：実行日の7日前〜前日
@@ -1335,6 +1338,7 @@ function buildAllSummarySheets(reportSS, logRows, scheduleRows, year, month) {
     note:      '試作課が製品開発に「何に・どれくらい時間を使い・今どんな状況か」を共有するためのシートです（評価や監視を目的としたものではありません。販促物は「⓪販促サマリー」へ）',
     tabColor:  SUMMARY_BLUE_DARK,
     position:  0,
+    showIndirect: true,  // 間接業務の内訳は課全体で共通のため、メインの日報サマリーにのみ表示
   });
   buildSummarySheet(reportSS, logRows, scheduleRows, year, month, {
     sheetName: SUMMARY_PROMO_SHEET_NAME,
@@ -1430,7 +1434,7 @@ function buildSummarySheet(reportSS, logRows, scheduleRows, year, month, opts) {
 
   // 製作/付帯業務の内訳（月内・前月。中分類マスタの「分類」列に基づく）
   const clsMap = getSubcatClassMap_();
-  const CLS_KEYS = ['製作', '付帯業務', '中分類未入力'];
+  const CLS_KEYS = ['製作', '付帯業務', '中分類未選択', '中分類対象外'];
   const sumByClass = sample => {
     const m = new Map();
     for (const r of sample) {
@@ -1441,6 +1445,19 @@ function buildSummarySheet(reportSS, logRows, scheduleRows, year, month, opts) {
   };
   const clsCur  = sumByClass(monthSample);
   const clsPrev = sumByClass(prevSample);
+
+  // 間接業務（その他種別）の内訳（課全体・参考。KPIカード「うち間接」の中身）
+  const sumByWorkType = logs => {
+    const m = new Map();
+    for (const r of logs) {
+      if (r[L.type] === 'サンプル製造') continue;
+      const k = String(r[L.workType] || '').trim() || '（種別未入力）';
+      m.set(k, (m.get(k) || 0) + (Number(r[L.workMin]) || 0));
+    }
+    return m;
+  };
+  const indCur  = sumByWorkType(monthLogs);
+  const indPrev = sumByWorkType(prevLogs);
 
   // 担当者別（月内・製造）
   const workerMap = new Map();
@@ -1528,8 +1545,29 @@ function buildSummarySheet(reportSS, logRows, scheduleRows, year, month, opts) {
     sheet.getRange(row, 8).setValue(deltaStr(fmtH(min), fmtH(clsPrev.get(k) || 0), 'h')).setFontSize(8).setFontColor('#90A4AE');
     row++;
   });
-  noteRow(row, '※ 製作＝型紙・仮制作・本制作など、付帯業務＝原価表・工程表・引き継ぎ・ミーティングなど（設定タブの中分類管理で変更可）。「中分類未入力」は日報で中分類が選ばれていない時間です');
+  noteRow(row, '※ 製作＝型紙・仮制作・本制作など、付帯業務＝原価表・工程表・引き継ぎ・ミーティングなど（設定タブの中分類管理で変更可）'); row++;
+  noteRow(row, '※ 中分類対象外＝中分類の選択肢がないフェーズ（試験体・量産・エイジングサンプル・修理・SOP・治具）。中分類未選択＝中分類を選べるフェーズで選択されなかった時間（中分類機能ができた2026/6/17より前の日報を含むため、当面は多めに出ます）');
   row += 2;
+
+  // ---- 🗂 間接業務の内訳（参考・課全体）----------------------------
+  if (opts.showIndirect) {
+    sectionHeader(row, '🗂 間接業務（その他）の内訳（参考・課全体）'); row++;
+    const indRows  = [...indCur.entries()].sort((a, b) => b[1] - a[1]);
+    const indTotal = indRows.reduce((a, e) => a + e[1], 0);
+    const indMax   = indRows.length ? indRows[0][1] : 0;
+    if (indRows.length === 0) { noteRow(row, '該当月の間接業務の日報がありません'); row++; }
+    indRows.forEach(([k, min]) => {
+      const share = indTotal > 0 ? Math.round(min / indTotal * 100) : 0;
+      sheet.getRange(row, 1).setValue(k).setFontSize(10);
+      sheet.getRange(row, 4, 1, 2).merge().setValue(barTx(min, indMax, 16)).setFontColor(SUMMARY_BLUE_LIGHT).setFontSize(10);
+      sheet.getRange(row, 6).setValue(fmtH(min) + 'h').setHorizontalAlignment('right');
+      sheet.getRange(row, 7).setValue(share + '%').setFontSize(9).setFontColor('#78909C').setHorizontalAlignment('right');
+      sheet.getRange(row, 8).setValue(deltaStr(fmtH(min), fmtH(indPrev.get(k) || 0), 'h')).setFontSize(8).setFontColor('#90A4AE');
+      row++;
+    });
+    noteRow(row, '※ 日報の「その他」種別（定例ミーティング・事務作業・棚卸しなど）の内訳。製品/販促を問わない課全体の参考値で、KPIカード「うち間接（参考）」の中身です');
+    row += 2;
+  }
 
   // ---- 📈 案件別工数 TOP10 -----------------------------------------
   sectionHeader(row, '📈 案件別工数 TOP10（月内・' + category + '）'); row++;
@@ -1961,7 +1999,8 @@ function createUsageGuideDoc() {
   addTable([
     ['セクション', '内容'],
     ['📦 今月の活動', '対象区分の工数・労務費・稼働案件数・担当人数＋参考として課全体総工数・間接のKPIカード（前月比付き）'],
-    ['🔧 工数の内訳（製作／付帯業務）', '中分類の「分類」（設定タブで変更可）に基づき、製作（型紙・仮制作・本制作など）と付帯業務（原価表・工程表・引き継ぎ・ミーティングなど）の時間配分を表示。中分類が選ばれていない時間は「中分類未入力」'],
+    ['🔧 工数の内訳（製作／付帯業務）', '中分類の「分類」（設定タブで変更可）に基づき、製作（型紙・仮制作・本制作など）と付帯業務（原価表・工程表・引き継ぎ・ミーティングなど）の時間配分を表示。中分類対象外＝中分類の選択肢がないフェーズ（試験体・量産・エイジングサンプル・修理・SOP・治具）、中分類未選択＝選べたのに選択されなかった時間（2026/6/17の機能追加以前の日報を含む）'],
+    ['🗂 間接業務（その他）の内訳', '日報の「その他」種別（定例ミーティング・事務作業・棚卸しなど）の時間内訳。課全体の参考値で、KPIカード「うち間接（参考）」の中身。⓪日報サマリーのみに表示'],
     ['📈 案件別工数 TOP10', '月内工数の横棒ランキング。濃い青=上位20%、薄い青=20〜40%（評価ではなく事実の共有）'],
     ['🛠 工程別の時間配分', 'モック/1st/2nd/3rd以降/最終/色増し/その他の時間配分と構成比'],
     ['👥 担当者別稼働状況', '体制の共有が目的。効率・生産性の比較には使わない'],

@@ -32,8 +32,32 @@ const L = {
 };
 
 // フェーズ中分類マスター（Code.gsのSHEETS.STAGE_SUBCATSと同期）
-const SUBCAT_KEYS   = ['型紙・抜き型作成/修正', '仮制作（部分サンプル・部分修正）', '本制作（型修正がない場合）', '原価表作成・修正', '工程表作成・修正'];
-const SUBCAT_LABELS = ['型紙・抜き型', '仮制作', '本制作', '原価表', '工程表'];
+// keysには旧名称（2026-06-18リネーム前）も含め、過去ログを取りこぼさない
+const SUBCAT_GROUPS = [
+  { label: '型紙・抜き型', keys: ['型紙作成・修正', '型紙・抜き型作成/修正', '抜き型作成'] },
+  { label: '仮制作',       keys: ['仮制作（部分サンプル・部分修正）'] },
+  { label: '本制作',       keys: ['本制作（型修正がない場合）'] },
+  { label: '原価表',       keys: ['原価表作成・修正'] },
+  { label: '工程表',       keys: ['工程表作成・修正'] },
+];
+
+// 中分類 → 分類（製作/付帯業務）の既定値。マスタのD列「分類」があればそちらを優先する
+const DEFAULT_SUBCAT_CLASS = {
+  '型紙作成・修正':                   '製作',
+  '型紙・抜き型作成/修正':            '製作',  // 旧名称
+  '仮制作（部分サンプル・部分修正）': '製作',
+  '本制作（型修正がない場合）':       '製作',
+  '抜き型作成':                       '付帯業務',
+  '原価表作成・修正':                 '付帯業務',
+  '工程表作成・修正':                 '付帯業務',
+  '引き継ぎ':                         '付帯業務',
+  'サンプル依頼ミーティング':          '付帯業務',
+  '裁断確認ミーティング':              '付帯業務',
+  '製造開発ミーティング':              '付帯業務',
+  '色増しフィードバックミーティング':  '付帯業務',
+  '量産フィードバックミーティング':    '付帯業務',
+  'サンプルチェック':                 '付帯業務',
+};
 
 // フェーズ大分類のうち「中分類あり」の8段階（⑧製品×職人別・⑦製品別のフェーズ内訳列に使う）
 // ステージマスター（Code.gsのSHEETS.STAGES）で中分類あり=trueのものと一致
@@ -304,6 +328,27 @@ function getProductCategoryMap_() {
 function logCategory_(r, catMap) {
   const c = String(r[L.category] || '').trim() || catMap.get(r[L.product]) || '';
   return c === '販促' ? '販促' : '製品';
+}
+
+// 中分類名 → 分類（製作/付帯業務）のマップ。
+// アプリの「フェーズ中分類」シートD列を優先し、未設定はコード内既定値で補完する
+function getSubcatClassMap_() {
+  const map = new Map(Object.entries(DEFAULT_SUBCAT_CLASS));
+  const s = SpreadsheetApp.openById(REPORT_CONFIG.logSSId).getSheetByName('フェーズ中分類');
+  if (!s || s.getLastRow() <= 1 || s.getLastColumn() < 4) return map;
+  s.getRange(2, 2, s.getLastRow() - 1, 3).getValues().forEach(r => {
+    const name = String(r[0] || '').trim();
+    const cls  = String(r[2] || '').trim();
+    if (name && (cls === '製作' || cls === '付帯業務')) map.set(name, cls);
+  });
+  return map;
+}
+
+// ログ1行の時間分類を返す：製作／付帯業務／中分類未入力
+function logSubcatClass_(r, clsMap) {
+  const sc = String(r[L.subcat] || '').trim();
+  if (!sc) return '中分類未入力';
+  return clsMap.get(sc) || '中分類未入力';
 }
 
 // 集計期間：実行日の7日前〜前日
@@ -741,9 +786,9 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
     '実作業開始', '実作業最終', '作業日数',
     '計画開始', '計画完了',
     '月内_モック(h)', '月内_1st(h)', '月内_2nd(h)', '月内_3rd(h)', '月内_その他(h)',
-    ...SUBCAT_LABELS.map(l => '月内_' + l + '(h)'),
+    ...SUBCAT_GROUPS.map(g => '月内_' + g.label + '(h)'),
     '累計_モック(h)', '累計_1st(h)', '累計_2nd(h)', '累計_3rd(h)', '累計_その他(h)',
-    ...SUBCAT_LABELS.map(l => '累計_' + l + '(h)'),
+    ...SUBCAT_GROUPS.map(g => '累計_' + g.label + '(h)'),
   ];
   const sheet = getOrInitSheet(reportSS, '⑥企画別', HEADERS, '#A142F4');
 
@@ -846,11 +891,12 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
       const monthSubcatMin = new Map();
       for (const r of monthLogs) {
         const sc = r[L.subcat] || '';
-        if (!sc || !SUBCAT_KEYS.includes(sc)) continue;
-        monthSubcatMin.set(sc, (monthSubcatMin.get(sc) || 0) + (Number(r[L.workMin]) || 0));
+        const g  = SUBCAT_GROUPS.find(g => g.keys.includes(sc));
+        if (!g) continue;
+        monthSubcatMin.set(g.label, (monthSubcatMin.get(g.label) || 0) + (Number(r[L.workMin]) || 0));
       }
-      const monthSubcatCols = SUBCAT_KEYS.map(sc => {
-        const m = monthSubcatMin.get(sc) || 0;
+      const monthSubcatCols = SUBCAT_GROUPS.map(g => {
+        const m = monthSubcatMin.get(g.label) || 0;
         return m > 0 ? +(m / 60).toFixed(1) : '';
       });
 
@@ -870,11 +916,12 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
       const allSubcatMin = new Map();
       for (const r of allLogs) {
         const sc = r[L.subcat] || '';
-        if (!sc || !SUBCAT_KEYS.includes(sc)) continue;
-        allSubcatMin.set(sc, (allSubcatMin.get(sc) || 0) + (Number(r[L.workMin]) || 0));
+        const g  = SUBCAT_GROUPS.find(g => g.keys.includes(sc));
+        if (!g) continue;
+        allSubcatMin.set(g.label, (allSubcatMin.get(g.label) || 0) + (Number(r[L.workMin]) || 0));
       }
-      const subcatCols = SUBCAT_KEYS.map(sc => {
-        const m = allSubcatMin.get(sc) || 0;
+      const subcatCols = SUBCAT_GROUPS.map(g => {
+        const m = allSubcatMin.get(g.label) || 0;
         return m > 0 ? +(m / 60).toFixed(1) : '';
       });
 
@@ -1381,6 +1428,20 @@ function buildSummarySheet(reportSS, logRows, scheduleRows, year, month, opts) {
     .map(name => ({ name, min: phaseMin.get(name) || 0 }))
     .filter(e => e.min > 0);
 
+  // 製作/付帯業務の内訳（月内・前月。中分類マスタの「分類」列に基づく）
+  const clsMap = getSubcatClassMap_();
+  const CLS_KEYS = ['製作', '付帯業務', '中分類未入力'];
+  const sumByClass = sample => {
+    const m = new Map();
+    for (const r of sample) {
+      const k = logSubcatClass_(r, clsMap);
+      m.set(k, (m.get(k) || 0) + (Number(r[L.workMin]) || 0));
+    }
+    return m;
+  };
+  const clsCur  = sumByClass(monthSample);
+  const clsPrev = sumByClass(prevSample);
+
   // 担当者別（月内・製造）
   const workerMap = new Map();
   for (const r of monthSample) {
@@ -1449,6 +1510,26 @@ function buildSummarySheet(reportSS, logRows, scheduleRows, year, month, opts) {
     sheet.getRange(row + 2, c).setValue(k[2]).setFontSize(8).setFontColor('#90A4AE');
   });
   row += 4;
+
+  // ---- 🔧 製作/付帯業務の内訳 --------------------------------------
+  sectionHeader(row, '🔧 ' + category + '工数の内訳（製作／付帯業務）'); row++;
+  const clsTotal = CLS_KEYS.reduce((a, k) => a + (clsCur.get(k) || 0), 0);
+  const clsMax   = CLS_KEYS.reduce((a, k) => Math.max(a, clsCur.get(k) || 0), 0);
+  if (clsTotal === 0) { noteRow(row, '該当月のデータがありません'); row++; }
+  CLS_KEYS.forEach(k => {
+    const min = clsCur.get(k) || 0;
+    if (min === 0) return;
+    const share = clsTotal > 0 ? Math.round(min / clsTotal * 100) : 0;
+    sheet.getRange(row, 1).setValue(k).setFontSize(10);
+    sheet.getRange(row, 4, 1, 2).merge().setValue(barTx(min, clsMax, 16))
+      .setFontColor(k === '製作' ? SUMMARY_BLUE_DARK : k === '付帯業務' ? SUMMARY_BLUE_LIGHT : SUMMARY_GRAY).setFontSize(10);
+    sheet.getRange(row, 6).setValue(fmtH(min) + 'h').setHorizontalAlignment('right');
+    sheet.getRange(row, 7).setValue(share + '%').setFontSize(9).setFontColor('#78909C').setHorizontalAlignment('right');
+    sheet.getRange(row, 8).setValue(deltaStr(fmtH(min), fmtH(clsPrev.get(k) || 0), 'h')).setFontSize(8).setFontColor('#90A4AE');
+    row++;
+  });
+  noteRow(row, '※ 製作＝型紙・仮制作・本制作など、付帯業務＝原価表・工程表・引き継ぎ・ミーティングなど（設定タブの中分類管理で変更可）。「中分類未入力」は日報で中分類が選ばれていない時間です');
+  row += 2;
 
   // ---- 📈 案件別工数 TOP10 -----------------------------------------
   sectionHeader(row, '📈 案件別工数 TOP10（月内・' + category + '）'); row++;
@@ -1880,6 +1961,7 @@ function createUsageGuideDoc() {
   addTable([
     ['セクション', '内容'],
     ['📦 今月の活動', '対象区分の工数・労務費・稼働案件数・担当人数＋参考として課全体総工数・間接のKPIカード（前月比付き）'],
+    ['🔧 工数の内訳（製作／付帯業務）', '中分類の「分類」（設定タブで変更可）に基づき、製作（型紙・仮制作・本制作など）と付帯業務（原価表・工程表・引き継ぎ・ミーティングなど）の時間配分を表示。中分類が選ばれていない時間は「中分類未入力」'],
     ['📈 案件別工数 TOP10', '月内工数の横棒ランキング。濃い青=上位20%、薄い青=20〜40%（評価ではなく事実の共有）'],
     ['🛠 工程別の時間配分', 'モック/1st/2nd/3rd以降/最終/色増し/その他の時間配分と構成比'],
     ['👥 担当者別稼働状況', '体制の共有が目的。効率・生産性の比較には使わない'],
@@ -2157,7 +2239,7 @@ function createUsageGuideDoc() {
     ['計画開始', 'スケジュールSSの試作開始日'],
     ['計画完了', 'スケジュールSSの試作完了日'],
     ['月内_各フェーズ(h)', '当月・フェーズ大分類別の作業時間(分)合計 ÷ 60（モック〜量産の全フェーズ列）'],
-    ['月内_型紙・抜き型(h)', '当月・中分類＝型紙・抜き型作成/修正の作業時間(分)合計 ÷ 60'],
+    ['月内_型紙・抜き型(h)', '当月・中分類＝型紙作成・修正／抜き型作成（旧名称含む）の作業時間(分)合計 ÷ 60'],
     ['月内_仮制作〜工程表(h)', '同上（仮制作 / 本制作 / 原価表 / 工程表）各中分類列'],
     ['累計_各フェーズ(h)', '全期間版のフェーズ大分類内訳（全フェーズ列）'],
     ['累計_型紙・抜き型〜工程表(h)', '全期間版のフェーズ中分類内訳（5列）。企画間比較の主役'],

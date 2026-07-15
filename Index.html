@@ -440,11 +440,17 @@ tr:active td{background:#f5fbfb}
   <div class="card">
     <div class="card-ttl acc-ttl closed" onclick="toggleAcc(this)">📋 フェーズ中分類管理</div>
     <div class="acc-body closed">
-      <p class="setting-note">大分類で「中分類あり」に設定したフェーズを選んだ際に、任意で選択できる中分類のリストです。</p>
+      <p class="setting-note">大分類で「中分類あり」に設定したフェーズを選んだ際に、任意で選択できる中分類のリストです。分類（製作／付帯業務）はサマリーの時間内訳の集計に使われます。</p>
       <div class="row" style="align-items:flex-end">
         <div class="fg"><label>中分類名</label>
           <input type="text" id="sc-name" placeholder="例: 型紙作成・修正">
           <input type="hidden" id="sc-edit-orig">
+        </div>
+        <div class="fg" style="flex:0 0 130px"><label>分類</label>
+          <select id="sc-class">
+            <option value="製作">製作</option>
+            <option value="付帯業務">付帯業務</option>
+          </select>
         </div>
         <button class="btn btn-mono btn-sm" id="sc-add-btn" onclick="addSubcat()">追加</button>
         <button class="btn btn-p btn-sm" id="sc-save-btn" style="display:none" onclick="saveSubcatEdit()">更新</button>
@@ -1310,8 +1316,8 @@ function addSubcat() {
   const name = document.getElementById('sc-name').value.trim();
   if (!name) { toast('中分類名を入力してください','err'); return; }
   google.script.run
-    .withSuccessHandler(r => { toast(r.message,r.success?'ok':'err'); if(r.success){document.getElementById('sc-name').value=''; reload();} })
-    .addStageSubcat(name);
+    .withSuccessHandler(r => { toast(r.message,r.success?'ok':'err'); if(r.success){document.getElementById('sc-name').value=''; document.getElementById('sc-class').value='製作'; reload();} })
+    .addStageSubcat(name, document.getElementById('sc-class').value);
 }
 
 function editSchedule(name) {
@@ -1383,6 +1389,7 @@ function editSubcat(name) {
   const sc = S.subcats.find(s => s.name === name);
   if (!sc) return;
   document.getElementById('sc-name').value      = sc.name;
+  document.getElementById('sc-class').value     = sc.cls === '付帯業務' ? '付帯業務' : '製作';
   document.getElementById('sc-edit-orig').value = sc.name;
   document.getElementById('sc-add-btn').style.display    = 'none';
   document.getElementById('sc-save-btn').style.display   = '';
@@ -1395,10 +1402,11 @@ function saveSubcatEdit() {
   if (!name) { toast('中分類名を入力してください','err'); return; }
   google.script.run
     .withSuccessHandler(r => { toast(r.message,r.success?'ok':'err'); if(r.success){ cancelSubcatEdit(); reload(); } })
-    .updateStageSubcat(orig, name);
+    .updateStageSubcat(orig, name, document.getElementById('sc-class').value);
 }
 function cancelSubcatEdit() {
   document.getElementById('sc-name').value      = '';
+  document.getElementById('sc-class').value     = '製作';
   document.getElementById('sc-edit-orig').value = '';
   document.getElementById('sc-add-btn').style.display    = '';
   document.getElementById('sc-save-btn').style.display   = 'none';
@@ -1488,7 +1496,8 @@ function renderLists() {
     : '<div class="empty">未登録</div>';
 
   document.getElementById('list-sc').innerHTML = S.subcats.length
-    ? mTable(['順番','中分類名'], S.subcats.map((s,i)=>[i+1, `<strong>${esc(s.name)}</strong>`,
+    ? mTable(['順番','中分類名','分類'], S.subcats.map((s,i)=>[i+1, `<strong>${esc(s.name)}</strong>`,
+        `<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;${s.cls==='付帯業務'?'background:#ECEFF1;color:#546E7A':'background:#E3F2FD;color:#1565C0'}">${esc(s.cls||'製作')}</span>`,
         `<button class="btn btn-g btn-sm" onclick="moveSubcat('${esc(s.name)}',-1)" ${i===0?'disabled':''}>▲</button>
          <button class="btn btn-g btn-sm" onclick="moveSubcat('${esc(s.name)}',1)" ${i===S.subcats.length-1?'disabled':''}>▼</button>
          <button class="btn btn-mono btn-sm" onclick="editSubcat('${esc(s.name)}')">修正</button>

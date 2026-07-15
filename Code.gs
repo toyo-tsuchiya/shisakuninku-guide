@@ -84,21 +84,22 @@ function setup() {
   // フェーズ中分類マスター
   s = getOrCreate(ss, SHEETS.STAGE_SUBCATS);
   if (s.getLastRow() === 0) {
-    s.appendRow(['ID', '中分類名', '順番']);
-    header(s, 3);
+    s.appendRow(['ID', '中分類名', '順番', '分類']);
+    header(s, 4);
     [
-      ['SC1',  '型紙作成・修正',                  1],
-      ['SC2',  '仮制作（部分サンプル・部分修正）', 2],
-      ['SC3',  '本制作（型修正がない場合）',       3],
-      ['SC4',  '原価表作成・修正',                4],
-      ['SC5',  '工程表作成・修正',                5],
-      ['SC6',  '引き継ぎ',                        6],
-      ['SC7',  'サンプル依頼ミーティング',         7],
-      ['SC8',  '裁断確認ミーティング',             8],
-      ['SC9',  '製造開発ミーティング',             9],
-      ['SC10', '色増しフィードバックミーティング', 10],
-      ['SC11', '量産フィードバックミーティング',   11],
-      ['SC12', 'サンプルチェック',                12],
+      ['SC1',  '型紙作成・修正',                  1,  '製作'],
+      ['SC2',  '仮制作（部分サンプル・部分修正）', 2,  '製作'],
+      ['SC3',  '本制作（型修正がない場合）',       3,  '製作'],
+      ['SC4',  '抜き型作成',                      4,  '付帯業務'],
+      ['SC5',  '原価表作成・修正',                5,  '付帯業務'],
+      ['SC6',  '工程表作成・修正',                6,  '付帯業務'],
+      ['SC7',  '引き継ぎ',                        7,  '付帯業務'],
+      ['SC8',  'サンプル依頼ミーティング',         8,  '付帯業務'],
+      ['SC9',  '裁断確認ミーティング',             9,  '付帯業務'],
+      ['SC10', '製造開発ミーティング',            10, '付帯業務'],
+      ['SC11', '色増しフィードバックミーティング', 11, '付帯業務'],
+      ['SC12', '量産フィードバックミーティング',   12, '付帯業務'],
+      ['SC13', 'サンプルチェック',                13, '付帯業務'],
     ].forEach(r => s.appendRow(r));
   } else {
     migrateSubcats_(s);
@@ -170,6 +171,7 @@ function migrateSubcats_(s) {
     '色増しフィードバックミーティング',
     '量産フィードバックミーティング',
     'サンプルチェック',
+    '抜き型作成',
   ];
   let order = lastRow;
   toAdd.forEach(name => {
@@ -177,6 +179,23 @@ function migrateSubcats_(s) {
       s.appendRow(['SC' + order, name, order]);
       order++;
     }
+  });
+
+  // D列「分類」（製作/付帯業務）の追加。未設定の行に既定値を入れる
+  if (s.getRange(1, 4).getValue() !== '分類') {
+    s.getRange(1, 4).setValue('分類');
+    header(s, 4);
+  }
+  const SEISAKU = new Set([
+    '型紙作成・修正', '型紙・抜き型作成/修正',
+    '仮制作（部分サンプル・部分修正）', '本制作（型修正がない場合）',
+  ]);
+  const rows = s.getRange(2, 2, s.getLastRow() - 1, 3).getValues();  // B:名前 C:順番 D:分類
+  rows.forEach((r, i) => {
+    const name = String(r[0] || '').trim();
+    const cls  = String(r[2] || '').trim();
+    if (!name || cls === '製作' || cls === '付帯業務') return;
+    s.getRange(i + 2, 4).setValue(SEISAKU.has(name) ? '製作' : '付帯業務');
   });
 }
 
@@ -256,10 +275,12 @@ function getStageSubcats(ss) {
   ss = ss || SpreadsheetApp.getActiveSpreadsheet();
   const s = ss.getSheetByName(SHEETS.STAGE_SUBCATS);
   if (!s || s.getLastRow() <= 1) return [];
-  return s.getRange(2, 1, s.getLastRow()-1, 3).getValues()
+  const hasCls = s.getLastColumn() >= 4;
+  const cols = hasCls ? 4 : 3;
+  return s.getRange(2, 1, s.getLastRow()-1, cols).getValues()
     .filter(r => r[1])
     .sort((a,b) => a[2]-b[2])
-    .map(r => ({ id:r[0], name:r[1], order:r[2] }));
+    .map(r => ({ id:r[0], name:r[1], order:r[2], cls: hasCls ? (r[3]||'') : '' }));
 }
 
 // ----------------------------------------------------------
@@ -437,16 +458,16 @@ function updateStage(origName, name, hasSub) {
   s.getRange(idx+2, 2, 1, 3).setValues([[name, s.getRange(idx+2, 3).getValue(), hasSub ? true : false]]);
   return { success:true, message:`「${name}」を更新しました。` };
 }
-function addStageSubcat(name) {
+function addStageSubcat(name, cls) {
   if (!name) return { success:false, message:'中分類名を入力してください。' };
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const s  = ss.getSheetByName(SHEETS.STAGE_SUBCATS);
   const order = s.getLastRow();
-  s.appendRow(['SC'+order, name, order]);
+  s.appendRow(['SC'+order, name, order, cls === '付帯業務' ? '付帯業務' : '製作']);
   return { success:true, message:`中分類「${name}」を追加しました。` };
 }
 function deleteStageSubcat(name) { return delRow(SHEETS.STAGE_SUBCATS, 2, name); }
-function updateStageSubcat(origName, name) {
+function updateStageSubcat(origName, name, cls) {
   if (!name) return { success:false, message:'中分類名を入力してください。' };
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const s  = ss.getSheetByName(SHEETS.STAGE_SUBCATS);
@@ -455,6 +476,7 @@ function updateStageSubcat(origName, name) {
   const idx  = data.findIndex(r => r[0] === origName);
   if (idx === -1) return { success:false, message:`「${origName}」が見つかりません。` };
   s.getRange(idx+2, 2).setValue(name);
+  if (cls === '製作' || cls === '付帯業務') s.getRange(idx+2, 4).setValue(cls);
   return { success:true, message:`「${name}」を更新しました。` };
 }
 

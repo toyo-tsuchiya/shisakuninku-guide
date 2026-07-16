@@ -9,6 +9,8 @@ const REPORT_CONFIG = {
   scheduleSheetName:'【スケジュール】2024.01～',
   reportSSId:       '14tMjnRUk5cguC3iX80DwjxeVmyO9TYuv0JFU4cW_ziE',  // 集計レポートSS（ID直指定。名前変更の影響を受けない）
   reportSSName:     'WeeklyReport',
+  summarySSId:      '',  // サマリー専用SS。初回実行後、ログに出るURLのIDをここに貼ると確実（空なら名前検索）
+  summarySSName:    '試作課：日報サマリー',
 };
 
 // 未入力リマインドの営業日判定で除外する休業日
@@ -59,9 +61,12 @@ const DEFAULT_SUBCAT_CLASS = {
   'サンプルチェック':                 '付帯業務',
 };
 
-// フェーズ大分類のうち「中分類あり」の8段階（⑧製品×職人別・⑦製品別のフェーズ内訳列に使う）
+// フェーズ大分類のうち「中分類あり」の8段階（中分類対象外の判定にも使う）
 // ステージマスター（Code.gsのSHEETS.STAGES）で中分類あり=trueのものと一致
 const DETAIL_PHASE_KEYS = ['モック', '1st', '2nd', '3rd', '4th', '5th', '最終', '色増しサンプル'];
+
+// ⑦製品別・⑧製品×職人別のフェーズ内訳列（8段階＋SOP等の重要業務。エイジングサンプルは「その他」扱い）
+const PRODUCT_PHASE_KEYS = [...DETAIL_PHASE_KEYS, '試験体', '修理', 'SOP', '治具'];
 
 // スケジュールSSの列インデックス（0始まり）
 const S = {
@@ -617,7 +622,7 @@ function generateMonthlyReportForMonth(year, month) {
   appendToProductReport(reportSS, logRows, scheduleRows, startDate, endDate, label);
   appendToProductWorkerReport(reportSS, logRows, scheduleRows, startDate, endDate, label);
   appendToWorkerMonthly(reportSS, logRows, startDate, endDate, label);
-  buildAllSummarySheets(reportSS, logRows, scheduleRows, year, month);
+  buildAllSummarySheets(logRows, scheduleRows, year, month);
 
   Logger.log(label + ' 月次レポート完了: ' + reportSS.getUrl());
 }
@@ -972,7 +977,7 @@ function appendToProjectReport(reportSS, logRows, scheduleRows, startDate, endDa
 // ⑥企画別より細かく、⑧製品×職人別を職人でまとめた粒度（チームでの製品単位）
 // ================================================================
 function appendToProductReport(reportSS, logRows, scheduleRows, startDate, endDate, label) {
-  const PHASE_KEYS = DETAIL_PHASE_KEYS;
+  const PHASE_KEYS = PRODUCT_PHASE_KEYS;
   const HEADERS = [
     '年月', '企画名', 'ブランド', '製品名', '区分', '担当人数', '担当者（累計）',
     '月内工数(h)', '月内労務費(円)', '累計工数(h)', '累計労務費(円)',
@@ -981,8 +986,12 @@ function appendToProductReport(reportSS, logRows, scheduleRows, startDate, endDa
   ];
   const sheet = getOrInitSheet(reportSS, '⑦製品別', HEADERS, '#26A69A');
 
-  // ヘッダー列数が変わった場合（フェーズ列追加など）は自動更新
+  // 列構成が変わった場合：既存データ行があると列がずれるため追記を中止（タブ削除→再生成が必要）
   if (sheet.getLastColumn() < HEADERS.length) {
+    if (sheet.getLastRow() > 1) {
+      Logger.log('⑦製品別: フェーズ列の構成が変わりました。タブを削除してから run202605() 等で各月を再生成してください（追記を中止）');
+      return;
+    }
     sheet.getRange(1, 1, 1, HEADERS.length)
       .setValues([HEADERS])
       .setBackground('#37474F').setFontColor('#FFFFFF').setFontWeight('bold').setHorizontalAlignment('center');
@@ -1070,7 +1079,7 @@ function appendToProductReport(reportSS, logRows, scheduleRows, startDate, endDa
 // ⑧ 製品×職人別（月次追記型・月内 + 累計）「誰がどの製品のどのフェーズに何時間」
 // ================================================================
 function appendToProductWorkerReport(reportSS, logRows, scheduleRows, startDate, endDate, label) {
-  const PHASE_KEYS = DETAIL_PHASE_KEYS;
+  const PHASE_KEYS = PRODUCT_PHASE_KEYS;
   const HEADERS = [
     '年月', '企画名', '製品名', '区分', '職人名',
     '月内工数(h)', '月内労務費(円)', '累計工数(h)', '累計労務費(円)',
@@ -1079,8 +1088,12 @@ function appendToProductWorkerReport(reportSS, logRows, scheduleRows, startDate,
   ];
   const sheet = getOrInitSheet(reportSS, '⑧製品×職人別', HEADERS, '#FF7043');
 
-  // ヘッダー列数が変わった場合（フェーズ列追加など）は自動更新
+  // 列構成が変わった場合：既存データ行があると列がずれるため追記を中止（タブ削除→再生成が必要）
   if (sheet.getLastColumn() < HEADERS.length) {
+    if (sheet.getLastRow() > 1) {
+      Logger.log('⑧製品×職人別: フェーズ列の構成が変わりました。タブを削除してから run202605() 等で各月を再生成してください（追記を中止）');
+      return;
+    }
     sheet.getRange(1, 1, 1, HEADERS.length)
       .setValues([HEADERS])
       .setBackground('#37474F').setFontColor('#FFFFFF').setFontWeight('bold').setHorizontalAlignment('center');
@@ -1322,16 +1335,20 @@ const SUMMARY_GRAY       = '#B0BEC5';  // その他
 function generateSummarySheet(year, month) {
   const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       19);
   const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
-  buildAllSummarySheets(getOrCreateReportSS(), logRows, scheduleRows, year, month);
+  buildAllSummarySheets(logRows, scheduleRows, year, month);
 }
 
 // 単月を手動で生成/更新するラッパー（上書き型なので何度実行してもOK。月の途中でも安全）
 function runSummary202606() { generateSummarySheet(2026, 6); }
 function runSummary202607() { generateSummarySheet(2026, 7); }
 
-// 製品サマリーと販促サマリーの2枚を生成する
-function buildAllSummarySheets(reportSS, logRows, scheduleRows, year, month) {
-  buildSummarySheet(reportSS, logRows, scheduleRows, year, month, {
+// 製品サマリーと販促サマリーの2枚を専用SS「試作課：日報サマリー」に生成し、
+// 同じSS内に月別タブ（例:「2026年06月 製品」）としてアーカイブする。
+// 集計データ（①〜⑧）はWeeklyReport側に残るため、サマリーSSは共有・閲覧専用として使える。
+function buildAllSummarySheets(logRows, scheduleRows, year, month) {
+  const summarySS = getOrCreateSummarySS();
+  const label = year + '年' + String(month).padStart(2, '0') + '月';
+  buildSummarySheet(summarySS, logRows, scheduleRows, year, month, {
     sheetName: SUMMARY_SHEET_NAME,
     category:  '製品',
     title:     '試作課 日報サマリー',
@@ -1340,7 +1357,7 @@ function buildAllSummarySheets(reportSS, logRows, scheduleRows, year, month) {
     position:  0,
     showIndirect: true,  // 間接業務の内訳は課全体で共通のため、メインの日報サマリーにのみ表示
   });
-  buildSummarySheet(reportSS, logRows, scheduleRows, year, month, {
+  buildSummarySheet(summarySS, logRows, scheduleRows, year, month, {
     sheetName: SUMMARY_PROMO_SHEET_NAME,
     category:  '販促',
     title:     '試作課 販促サマリー',
@@ -1348,6 +1365,48 @@ function buildAllSummarySheets(reportSS, logRows, scheduleRows, year, month) {
     tabColor:  '#E65100',
     position:  1,
   });
+
+  // 新規作成時に残るデフォルトシートを削除
+  ['シート1', 'Sheet1'].forEach(n => {
+    const s = summarySS.getSheetByName(n);
+    if (s && summarySS.getNumSheets() > 1) summarySS.deleteSheet(s);
+  });
+
+  // 月別アーカイブ（同じ月の再実行は置き換え。過去月との見比べ用）
+  archiveSummarySheet_(summarySS, SUMMARY_SHEET_NAME,       label + ' 製品');
+  archiveSummarySheet_(summarySS, SUMMARY_PROMO_SHEET_NAME, label + ' 販促');
+}
+
+// ライブのサマリーシートを月別タブとして複製保存する（既存の同名タブは置き換え）
+function archiveSummarySheet_(ss, liveName, archiveName) {
+  const live = ss.getSheetByName(liveName);
+  if (!live) return;
+  const old = ss.getSheetByName(archiveName);
+  if (old) ss.deleteSheet(old);
+  const copy = live.copyTo(ss).setName(archiveName);
+  copy.setTabColor('#9E9E9E');
+  ss.setActiveSheet(copy);
+  ss.moveActiveSheet(ss.getNumSheets());  // 末尾（アーカイブ領域）へ
+  ss.setActiveSheet(ss.getSheets()[0]);   // 開いたときはライブのサマリーが見えるように戻す
+  Logger.log('アーカイブ保存: ' + archiveName);
+}
+
+// ================================================================
+// サマリー専用SS取得（なければ新規作成）
+// ================================================================
+function getOrCreateSummarySS() {
+  // ID直指定が最優先（名前変更・同名ファイルの影響を受けない）
+  if (REPORT_CONFIG.summarySSId) return SpreadsheetApp.openById(REPORT_CONFIG.summarySSId);
+
+  const files = DriveApp.getFilesByName(REPORT_CONFIG.summarySSName);
+  while (files.hasNext()) {
+    const f = files.next();
+    if (f.getMimeType() === MimeType.GOOGLE_SHEETS) return SpreadsheetApp.open(f);
+  }
+  const ss = SpreadsheetApp.create(REPORT_CONFIG.summarySSName);
+  Logger.log('サマリーSS新規作成: ' + ss.getUrl());
+  Logger.log('※ 事故防止のため、このURLのID（/d/と/editの間の文字列）を REPORT_CONFIG.summarySSId に貼ってください');
+  return ss;
 }
 
 function buildSummarySheet(reportSS, logRows, scheduleRows, year, month, opts) {
@@ -1420,6 +1479,10 @@ function buildSummarySheet(reportSS, logRows, scheduleRows, year, month, opts) {
     { name: '3rd以降',        keys: ['3rd', '4th', '5th'] },
     { name: '最終',           keys: ['最終'] },
     { name: '色増しサンプル', keys: ['色増しサンプル'] },
+    { name: '試験体',         keys: ['試験体'] },
+    { name: '修理',           keys: ['修理'] },
+    { name: 'SOP',            keys: ['SOP'] },
+    { name: '治具',           keys: ['治具'] },
   ];
   const phaseMin = new Map();
   for (const r of monthSample) {
@@ -1699,7 +1762,8 @@ function generateWeeklyReportBackfill() {
 // ================================================================
 function reorderSheets() {
   const ss = getOrCreateReportSS();
-  const order = ['⓪日報サマリー', '⓪販促サマリー', '①週次推移', '②職人別週次', '③月別推移', '④職人別月次', '⑤ブランド別', '⑥企画別', '⑦製品別', '⑧製品×職人別'];
+  // ⓪サマリー2枚は専用SS「試作課：日報サマリー」に移動（2026-07-16）
+  const order = ['①週次推移', '②職人別週次', '③月別推移', '④職人別月次', '⑤ブランド別', '⑥企画別', '⑦製品別', '⑧製品×職人別'];
   order.forEach((name, i) => {
     const sheet = ss.getSheetByName(name);
     if (sheet) { ss.setActiveSheet(sheet); ss.moveActiveSheet(i + 1); }
@@ -1995,14 +2059,14 @@ function createUsageGuideDoc() {
 
   // ⓪ 日報サマリー
   addHeading('⓪ 日報サマリー（濃青タブ）／⓪ 販促サマリー（橙タブ）', H2);
-  addText('試作課が「何に・どれくらい時間を使い・今どんな状況か」を誰でも数分で理解できるようにする共有用ダッシュボード。製品開発は「⓪日報サマリー」、販促物（ショート動画・撮影用制作など）は「⓪販促サマリー」に分けて表示する。毎月1日の自動実行で前月分に更新される（runSummary2026XX() で2枚とも手動更新可能。上書き型なので月の途中でも安全）。');
+  addText('試作課が「何に・どれくらい時間を使い・今どんな状況か」を誰でも数分で理解できるようにする共有用ダッシュボード。専用スプレッドシート「試作課：日報サマリー」に出力される（集計データ本体はWeeklyReportのまま）。製品開発は「⓪日報サマリー」、販促物（ショート動画・撮影用制作など）は「⓪販促サマリー」に分けて表示する。毎月1日の自動実行で前月分に更新され、同時に月別タブ（例:「2026年06月 製品」・グレータブ）として自動アーカイブされるため、過去の月と見比べられる（runSummary2026XX() で手動更新も可能。同じ月の再実行はアーカイブごと置き換わるので安全）。');
   addTable([
     ['セクション', '内容'],
     ['📦 今月の活動', '対象区分の工数・労務費・稼働案件数・担当人数＋参考として課全体総工数・間接のKPIカード（前月比付き）'],
     ['🔧 工数の内訳（製作／付帯業務）', '中分類の「分類」（設定タブで変更可）に基づき、製作（型紙・仮制作・本制作など）と付帯業務（原価表・工程表・引き継ぎ・ミーティングなど）の時間配分を表示。中分類対象外＝中分類の選択肢がないフェーズ（試験体・量産・エイジングサンプル・修理・SOP・治具）、中分類未選択＝選べたのに選択されなかった時間（2026/6/17の機能追加以前の日報を含む）'],
     ['🗂 間接業務（その他）の内訳', '日報の「その他」種別（定例ミーティング・事務作業・棚卸しなど）の時間内訳。課全体の参考値で、KPIカード「うち間接（参考）」の中身。⓪日報サマリーのみに表示'],
     ['📈 案件別工数 TOP10', '月内工数の横棒ランキング。濃い青=上位20%、薄い青=20〜40%（評価ではなく事実の共有）'],
-    ['🛠 工程別の時間配分', 'モック/1st/2nd/3rd以降/最終/色増し/その他の時間配分と構成比'],
+    ['🛠 工程別の時間配分', 'モック/1st/2nd/3rd以降/最終/色増し/試験体/修理/SOP/治具/その他の時間配分と構成比'],
     ['👥 担当者別稼働状況', '体制の共有が目的。効率・生産性の比較には使わない'],
     ['📋 案件一覧', '月内に日報のあった案件の今月/累計工数・現在工程・担当者'],
     ['💬 今月のトピック', '手入力欄。数字だけでは伝わらない背景をメモ（同じ月の再生成では消えない）'],
@@ -2087,6 +2151,7 @@ function createUsageGuideDoc() {
     ['見るポイント', '活用例'],
     ['区分', '「製品」か「販促」か。販促物の工数を除外して製品開発の実力値を見る'],
     ['月内_各フェーズ列', '製品ごとに今月どのフェーズに時間を使ったかが見える'],
+    ['試験体・修理・SOP・治具 列', 'サンプル製作以外の重要業務にかけた時間。「この製品のSOP作成に何時間」が製品単位で追える'],
     ['担当人数・担当者（累計）', 'その製品に関わった人数と顔ぶれ'],
   ]);
 

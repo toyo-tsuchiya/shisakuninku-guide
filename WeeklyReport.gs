@@ -9,7 +9,7 @@ const REPORT_CONFIG = {
   scheduleSheetName:'【スケジュール】2024.01～',
   reportSSId:       '14tMjnRUk5cguC3iX80DwjxeVmyO9TYuv0JFU4cW_ziE',  // 集計レポートSS（ID直指定。名前変更の影響を受けない）
   reportSSName:     'WeeklyReport',
-  summarySSId:      '',  // サマリー専用SS。初回実行後、ログに出るURLのIDをここに貼ると確実（空なら名前検索）
+  summarySSId:      '1m0f4PMYSjOGb9SmTQpcRHI2U_ACjGlY-iYrbnJSw5Co',  // サマリー専用SS（ID直指定。名前変更の影響を受けない）
   summarySSName:    '試作課：日報サマリー',
 };
 

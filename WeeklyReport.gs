@@ -69,15 +69,18 @@ const DETAIL_PHASE_KEYS = ['モック', '1st', '2nd', '3rd', '4th', '5th', '最�
 const PRODUCT_PHASE_KEYS = [...DETAIL_PHASE_KEYS, '試験体', '修理', 'SOP', '治具'];
 
 // スケジュールSSの列インデックス（0始まり）
+// 2026-07-17: A列に「製番」列を新設 →旧B〜M列が1列分右へ
+// 2026-07-21: 実シート確認の結果、D列に「製品or販促」列も新設されていたため、
+//             ブランド（C）より後ろの企画名以降はさらに1列分右へずれていた（合計2列分シフト）
 const S = {
-  brand:        1,  // B: ブランド
-  planName:     2,  // C: 企画名
-  product:      3,  // D: サンプル製品名称
-  phase:        6,  // G: サンプルフェーズ
-  deliveryDate: 8,  // I: 納品希望日
-  startDate:    9,  // J: 試作開始日
-  endDate:      10, // K: 試作完了日
-  status:       12, // M: ステータス
+  brand:        2,  // C: ブランド
+  planName:     4,  // E: 企画名
+  product:      5,  // F: サンプル製品名称
+  phase:        8,  // I: サンプルフェーズ
+  deliveryDate: 10, // K: 納品希望日
+  startDate:    11, // L: 試作開始日
+  endDate:      12, // M: 試作完了日
+  status:       14, // O: ステータス（N列は未使用のため間が空く）
 };
 
 // ================================================================
@@ -101,7 +104,7 @@ function generateWeeklyReport() {
 // スケジュールSSで全行のステータスが「完了」の製品をアプリのリストから削除する
 // ================================================================
 function archiveCompletedSchedules() {
-  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 13, 6);
+  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 15, 6);
 
   // 外部SSで製品名ごとのステータスを集計
   const productStatuses = new Map();
@@ -275,7 +278,7 @@ function sendMissingReportReminder_(email, name, missingDays) {
 // デバッグ：archiveCompletedSchedules の削除対象を確認（削除はしない）
 // ================================================================
 function debugArchiveSchedules() {
-  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 13, 6);
+  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 15, 6);
 
   Logger.log('=== 外部スケジュールSS 製品×ステータス一覧 ===');
   const productStatuses = new Map();
@@ -613,7 +616,7 @@ function generateMonthlyReportForMonth(year, month) {
   const label     = year + '年' + String(month).padStart(2, '0') + '月';
 
   const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       19);
-  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
+  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 15, 6);
   const reportSS     = getOrCreateReportSS();
 
   appendToMonthlyTrend(reportSS, logRows, startDate, endDate, label);
@@ -1334,7 +1337,7 @@ const SUMMARY_GRAY       = '#B0BEC5';  // その他
 
 function generateSummarySheet(year, month) {
   const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       19);
-  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
+  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 15, 6);
   buildAllSummarySheets(logRows, scheduleRows, year, month);
 }
 
@@ -1801,7 +1804,7 @@ function run202605() { generateMonthlyReportForMonth(2026, 5); }
 // ⑧製品×職人別を単月だけ試し生成するラッパー
 function runProductWorker202605() {
   const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       19);
-  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
+  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 15, 6);
   const reportSS     = getOrCreateReportSS();
   const startDate    = new Date(2026, 4,  1,  0,  0,  0,   0);
   const endDate      = new Date(2026, 5,  0, 23, 59, 59, 999);
@@ -1817,11 +1820,254 @@ function run202607() { generateMonthlyReportForMonth(2026, 7); }
 
 function runProductWorker202606() {
   const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       19);
-  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
+  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 15, 6);
   const reportSS     = getOrCreateReportSS();
   const startDate    = new Date(2026, 5,  1,  0,  0,  0,   0);
   const endDate      = new Date(2026, 6,  0, 23, 59, 59, 999);
   appendToProductWorkerReport(reportSS, logRows, scheduleRows, startDate, endDate, '2026年06月');
+}
+
+// ================================================================
+// 製番（製造番号）システム（2026-07-16定例発案・2026-07-17設計）
+//
+// 目的：日報アプリの製品選択リスト（内部製品マスタ）と、嶋谷さんが管理する
+// 外部スケジュール表は別物のスプレッドシートで、これまで同じ製品名を両方に
+// 手入力する二重管理だった。これが表記ゆれ・未突合の原因になっていたため、
+// 外部スケジュール表への入力を起点に、製品単位で一意の製番を自動発行し、
+// 内部製品マスタへも自動反映する（名前ではなく製番で紐付ける）。
+//
+// 粒度：製品単位（ブランド・企画名・製品名が一致する行は同じ製番を使い回す）。
+// 外部スケジュール表は1行=1フェーズのため、フェーズが進んでも製番は変わらない。
+// SOP等いったん「完了」で内部製品マスタの選択肢から消えた製品が後で再開しても、
+// 同じ製番で再びリンクされる。
+//
+// フォーマット：当面はシンプルな連番。ブランドコード等を含めた意味のある表示形式は
+// 検討中のため、連番はそのままに表示レイヤーとして後日追加する想定（2026-07-17時点）。
+//
+// 運用：10分おきの時間主導トリガーで自動実行（setupSeibanTrigger）。
+// 初回はrunSeibanSync()を手動実行し、ログと両シートの内容を確認してから
+// トリガーを設定すること。
+// ================================================================
+const SEIBAN_HEADER = '製番';
+
+// ヘッダー行に「製番」列があればその列番号を返し、なければ末尾に追加する
+// （外部スケジュール表・内部製品マスタどちらでも使う共通ヘルパー）
+function getOrCreateSeibanColumn_(sheet) {
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const existing = headers.indexOf(SEIBAN_HEADER);
+  if (existing !== -1) return existing + 1;
+  const col = lastCol + 1;
+  sheet.getRange(1, col).setValue(SEIBAN_HEADER).setFontWeight('bold');
+  return col;
+}
+
+// 製番列を先頭（A列）に移動する（2026-07-17: 一番左に表示したいというユーザー要望で1回限り実行）。
+// 既にA列にあれば何もしない。実行後は S 定数の列位置（すべて1列分右にずれた状態）と対応する。
+function moveSeibanColumnToFront_(sheet) {
+  const col = getOrCreateSeibanColumn_(sheet);
+  if (col === 1) return;
+  sheet.moveColumns(sheet.getRange(1, col, sheet.getMaxRows()), 1);
+  Logger.log((sheet.getName()) + ': 製番列をA列に移動しました（元は' + col + '列目）');
+}
+
+// 外部スケジュール表の製番列をA列に移動する手動実行用ラッパー。
+// 内部製品マスタ（スケジュールシート）側は Code.gs が列位置を固定で読んでいるため対象外
+// （動かす場合は Code.gs の getSchedules/submitReport/addSchedule 等も合わせて改修が必要）
+function moveSeibanColumnsToFront() {
+  moveSeibanColumnToFront_(SpreadsheetApp.openById(REPORT_CONFIG.scheduleSSId).getSheetByName(REPORT_CONFIG.scheduleSheetName));
+  Logger.log('製番列の先頭移動 完了（外部スケジュール表のみ）');
+}
+
+// ブランド・企画名・製品名から製品の同一性判定キーを作る（製番がまだ無い行の突合用）
+function scheduleProductKey_(row) {
+  const brand = String(row[S.brand]    || '').trim();
+  const plan  = String(row[S.planName] || '').trim();
+  const prod  = String(row[S.product]  || '').trim();
+  if (!prod) return '';
+  return brand + '\t' + plan + '\t' + prod;
+}
+
+// ① 外部スケジュール表の未採番の行に製番を発行する。
+// 同じ製品（ブランド・企画名・製品名が一致）の行には既存の製番を使い回す。
+function assignSeibanNumbers_() {
+  const sheet = SpreadsheetApp.openById(REPORT_CONFIG.scheduleSSId).getSheetByName(REPORT_CONFIG.scheduleSheetName);
+  const lastRow = sheet.getLastRow();
+  // データ行は6行目から（1〜5行目は見出し・注意書きのため対象外）
+  if (lastRow < 6) return sheet;
+
+  const seibanCol = getOrCreateSeibanColumn_(sheet);
+  const readCols  = Math.max(seibanCol, 15);
+  const rows = sheet.getRange(6, 1, lastRow - 5, readCols).getValues();
+
+  // 既存の製番から (ブランド|企画名|製品名) → 製番 のマップと最大値を作る
+  const keyToSeiban = new Map();
+  let maxSeiban = 0;
+  rows.forEach(r => {
+    const seiban = Number(r[seibanCol - 1]) || 0;
+    if (seiban <= 0) return;
+    maxSeiban = Math.max(maxSeiban, seiban);
+    const key = scheduleProductKey_(r);
+    if (key && !keyToSeiban.has(key)) keyToSeiban.set(key, seiban);
+  });
+
+  // 未採番の行に、既存製品なら使い回し・新規なら次の番号を発行
+  let nextSeiban = maxSeiban + 1;
+  let assigned = 0;
+  rows.forEach((r, i) => {
+    if ((Number(r[seibanCol - 1]) || 0) > 0) return;
+    const key = scheduleProductKey_(r);
+    if (!key) return;
+    let seiban = keyToSeiban.get(key);
+    if (!seiban) { seiban = nextSeiban++; keyToSeiban.set(key, seiban); }
+    sheet.getRange(i + 6, seibanCol).setValue(seiban);
+    assigned++;
+  });
+
+  if (assigned > 0) Logger.log('製番発行: ' + assigned + '件（外部スケジュール表）');
+  return sheet;
+}
+
+// ② 外部スケジュール表の製番を、日報アプリの内部製品マスタ（スケジュールシート）に反映する。
+// 製番で既存行と突合し、無ければ新規追加・製番未リンクの既存行があればバックフィルする
+// （表記ゆれで手入力されていた過去の行も、製品名が一致すれば製番を後付けできる）。
+function syncSeibanToAppProductMaster_() {
+  const extSheet = assignSeibanNumbers_();
+  const lastRow  = extSheet.getLastRow();
+  if (lastRow < 6) return;
+
+  const seibanCol = getOrCreateSeibanColumn_(extSheet);
+  const extRows = extSheet.getRange(6, 1, lastRow - 5, seibanCol).getValues();
+
+  // 製番ごとの最新情報（同じ製番の行が複数あれば最後の行を採用＝最新のフェーズ情報）
+  const latestBySeiban = new Map();
+  extRows.forEach(r => {
+    const seiban = Number(r[seibanCol - 1]) || 0;
+    if (!seiban) return;
+    latestBySeiban.set(seiban, {
+      seiban,
+      brand:   String(r[S.brand]    || '').trim(),
+      plan:    String(r[S.planName] || '').trim(),
+      product: String(r[S.product]  || '').trim(),
+    });
+  });
+  if (latestBySeiban.size === 0) return;
+
+  const appSheet = SpreadsheetApp.openById(REPORT_CONFIG.logSSId).getSheetByName('スケジュール');
+  if (!appSheet) { Logger.log('内部製品マスタ（スケジュールシート）が見つかりません'); return; }
+  const appSeibanCol = getOrCreateSeibanColumn_(appSheet);
+  const appLastRow   = appSheet.getLastRow();
+
+  // 既存行を 製番 → 行番号 のマップに。製番が未リンクの行は製品名で仮突合できるよう記録
+  const rowBySeiban = new Map();
+  const rowByName   = new Map();
+  if (appLastRow > 1) {
+    appSheet.getRange(2, 1, appLastRow - 1, appSeibanCol).getValues().forEach((r, i) => {
+      const rowNum  = i + 2;
+      const seiban  = Number(r[appSeibanCol - 1]) || 0;
+      if (seiban) rowBySeiban.set(seiban, rowNum);
+      const name = String(r[1] || '').trim();  // B列: 製品名
+      if (name && !rowByName.has(name)) rowByName.set(name, rowNum);
+    });
+  }
+
+  let inserted = 0, backfilled = 0;
+  latestBySeiban.forEach(info => {
+    if (!info.product) return;
+    let rowNum = rowBySeiban.get(info.seiban);
+
+    if (!rowNum) {
+      // 製番未リンクの既存行があれば新規追加せずそこに製番を後付けする
+      rowNum = rowByName.get(info.product);
+      if (rowNum) {
+        appSheet.getRange(rowNum, appSeibanCol).setValue(info.seiban);
+        backfilled++;
+      }
+    }
+
+    if (!rowNum) {
+      // 新規追加（製品or販促は既定「製品」・シーズンは空欄。誤りは設定タブで手動修正）
+      appSheet.appendRow(['SB' + String(info.seiban).padStart(4, '0'), info.product, '製品', '', info.brand, info.plan]);
+      appSheet.getRange(appSheet.getLastRow(), appSeibanCol).setValue(info.seiban);
+      inserted++;
+    }
+  });
+
+  if (inserted > 0 || backfilled > 0) {
+    Logger.log('内部製品マスタ同期: 新規追加' + inserted + '件 / 製番バックフィル' + backfilled + '件');
+  }
+}
+
+// 手動テスト用ラッパー（GASエディタから実行。トリガー設定前に必ず1回実行して結果を確認する）
+function runSeibanSync() {
+  syncSeibanToAppProductMaster_();
+  Logger.log('製番同期 手動実行 完了');
+}
+
+function setupSeibanTrigger() {
+  ScriptApp.getProjectTriggers()
+    .filter(t => t.getHandlerFunction() === 'syncSeibanToAppProductMaster_')
+    .forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('syncSeibanToAppProductMaster_')
+    .timeBased().everyMinutes(10).create();
+  Logger.log('製番同期トリガー設定完了: 10分おき');
+}
+
+// ================================================================
+// 製番バグの後始末（2026-07-21）
+// 列マッピングのバグ（企画名/製品名の取り違え・見出し行の誤読）により
+// 内部製品マスタに誤追加された「SB」始まりの行を確認・削除し、
+// 誤ってグルーピングされた製番を全体リセットするための後始末関数群
+// ================================================================
+
+// 内部製品マスタ（アプリ本体SSの「スケジュール」シート）で、
+// ID列が「SB」始まりの行（バグ入り同期で誤追加された行）を一覧表示する（削除はしない）
+function debugSeibanBadRows() {
+  const s = SpreadsheetApp.openById(REPORT_CONFIG.logSSId).getSheetByName('スケジュール');
+  if (!s || s.getLastRow() <= 1) { Logger.log('内部製品マスタが見つからないか空です'); return; }
+  const rows = s.getRange(2, 1, s.getLastRow() - 1, 6).getValues();
+  let count = 0;
+  rows.forEach((r, i) => {
+    const id = String(r[0] || '');
+    if (id.indexOf('SB') === 0) {
+      count++;
+      Logger.log('行' + (i + 2) + ': ' + id + ' | 製品名=' + r[1] + ' | ブランド=' + r[4] + ' | 企画名=' + r[5]);
+    }
+  });
+  Logger.log('=== SB始まりの行: ' + count + '件 ===');
+}
+
+// debugSeibanBadRows() で確認した「SB」始まりの行を削除する
+function deleteSeibanBadRows() {
+  const s = SpreadsheetApp.openById(REPORT_CONFIG.logSSId).getSheetByName('スケジュール');
+  if (!s || s.getLastRow() <= 1) { Logger.log('内部製品マスタが見つからないか空です'); return; }
+  const rows = s.getRange(2, 1, s.getLastRow() - 1, 1).getValues();
+  let deleted = 0;
+  // 下の行から削除しないと、削除するたびに行番号がズレて対象を取り違える
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const id = String(rows[i][0] || '');
+    if (id.indexOf('SB') === 0) {
+      s.deleteRow(i + 2);
+      deleted++;
+    }
+  }
+  Logger.log('削除完了: ' + deleted + '件（内部製品マスタのSB始まり行）');
+}
+
+// 外部スケジュール表・内部製品マスタ両方の「製番」列の数字を全部クリアする
+// （誤ったグルーピングで振られた番号をリセットし、修正済みコードで振り直すため）
+function resetSeibanColumns() {
+  const extSheet = SpreadsheetApp.openById(REPORT_CONFIG.scheduleSSId).getSheetByName(REPORT_CONFIG.scheduleSheetName);
+  const extCol   = getOrCreateSeibanColumn_(extSheet);
+  const extLast  = extSheet.getLastRow();
+  if (extLast >= 6) extSheet.getRange(6, extCol, extLast - 5, 1).clearContent();
+
+  const appSheet = SpreadsheetApp.openById(REPORT_CONFIG.logSSId).getSheetByName('スケジュール');
+  const appCol   = getOrCreateSeibanColumn_(appSheet);
+  const appLast  = appSheet.getLastRow();
+  if (appLast >= 2) appSheet.getRange(2, appCol, appLast - 1, 1).clearContent();
+
+  Logger.log('製番列リセット完了（外部スケジュール表・内部製品マスタとも）');
 }
 
 // ================================================================
@@ -1920,7 +2166,7 @@ function debugWeeklyReport() {
   Logger.log('=== 集計期間: ' + dFmt(startDate) + ' 〜 ' + dFmt(endDate) + ' ===');
 
   const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       18);
-  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName,  13, 6);
+  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 15, 6);
 
   const sampleLogs = logRows.filter(r => r[L.type] === 'サンプル製造');
   const weekLogs   = sampleLogs.filter(r => { const d = toDate(r[L.date]); return d && d >= startDate && d <= endDate; });
@@ -1948,7 +2194,7 @@ function debugWeeklyReport() {
 // ================================================================
 function debugUnmatched() {
   const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,      18);
-  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 13, 6);
+  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 15, 6);
 
   const scheduleProducts  = [...new Set(scheduleRows.map(r => r[S.product]).filter(Boolean))].sort();
   const schedulePlanNames = new Set(scheduleRows.map(r => r[S.planName]).filter(Boolean));

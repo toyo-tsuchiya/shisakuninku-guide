@@ -1818,6 +1818,43 @@ function run202606() { generateMonthlyReportForMonth(2026, 6); }
 // 削除してから run202607() を再実行して確定させること）
 function run202607() { generateMonthlyReportForMonth(2026, 7); }
 
+// ================================================================
+// 月の途中で「該当行削除→再実行」を安全に行うためのラッパー
+// ③④⑤⑥⑦⑧は月ラベルが既にあると追記をスキップする設計のため、先取り集計した後に
+// 追加で入力された日報（例：SOP作業など）を反映するには、該当月の行を一度削除してから
+// generateMonthlyReportForMonth を呼び直す必要がある。この関数はその手順をまとめて行う
+// （⓪サマリー2枚は上書き型のため、runSummary202607() 等の単体実行でも常に最新化される）
+// ================================================================
+function refreshMonthlyReport(year, month) {
+  const label = year + '年' + String(month).padStart(2, '0') + '月';
+  const reportSS = getOrCreateReportSS();
+
+  [
+    { name: '③月別推移',     col: 1 },
+    { name: '④職人別月次',   col: 1 },
+    { name: '⑤ブランド別',   col: 1 },
+    { name: '⑥企画別',       col: 2 },
+    { name: '⑦製品別',       col: 1 },
+    { name: '⑧製品×職人別', col: 1 },
+  ].forEach(({ name, col }) => {
+    const sheet = reportSS.getSheetByName(name);
+    if (!sheet || sheet.getLastRow() < 2) return;
+    const values = sheet.getRange(2, col, sheet.getLastRow() - 1, 1).getValues();
+    const rowsToDelete = values
+      .map((r, i) => ({ row: i + 2, val: String(r[0]) }))
+      .filter(({ val }) => val === label)
+      .map(({ row }) => row);
+    rowsToDelete.reverse().forEach(row => sheet.deleteRow(row));
+    Logger.log(name + ': ' + label + ' の行を' + rowsToDelete.length + '件削除');
+  });
+
+  generateMonthlyReportForMonth(year, month);
+  Logger.log(label + ' 再集計完了（本日までのデータを反映）');
+}
+
+// 2026年07月を本日時点のデータで再集計するラッパー（③〜⑧の該当行削除→再生成→サマリー更新）
+function refresh202607() { refreshMonthlyReport(2026, 7); }
+
 function runProductWorker202606() {
   const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       19);
   const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 15, 6);
@@ -1937,13 +1974,27 @@ function syncSeibanToAppProductMaster_() {
   if (lastRow < 6) return;
 
   const seibanCol = getOrCreateSeibanColumn_(extSheet);
-  const extRows = extSheet.getRange(6, 1, lastRow - 5, seibanCol).getValues();
+  const extRows = extSheet.getRange(6, 1, lastRow - 5, Math.max(seibanCol, 15)).getValues();
+
+  // 製番ごとに全行のステータスを集計（全行完了/中断ならarchiveCompletedSchedulesで
+  // 削除された（されるべき）製品なので、同期で復活させない）
+  const ARCHIVE_STATUSES = new Set(['完了', '中断']);
+  const statusesBySeiban = new Map();
+  extRows.forEach(r => {
+    const seiban = Number(r[seibanCol - 1]) || 0;
+    if (!seiban) return;
+    if (!statusesBySeiban.has(seiban)) statusesBySeiban.set(seiban, []);
+    statusesBySeiban.get(seiban).push(String(r[S.status] || '').trim());
+  });
 
   // 製番ごとの最新情報（同じ製番の行が複数あれば最後の行を採用＝最新のフェーズ情報）
   const latestBySeiban = new Map();
   extRows.forEach(r => {
     const seiban = Number(r[seibanCol - 1]) || 0;
     if (!seiban) return;
+    const statuses = statusesBySeiban.get(seiban) || [];
+    const allDone = statuses.length > 0 && statuses.every(s => ARCHIVE_STATUSES.has(s));
+    if (allDone) return;  // 完了/中断済みは日報アプリに追加・復活させない
     latestBySeiban.set(seiban, {
       seiban,
       brand:   String(r[S.brand]    || '').trim(),

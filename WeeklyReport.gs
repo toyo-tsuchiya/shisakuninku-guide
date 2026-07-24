@@ -2022,10 +2022,11 @@ function syncSeibanToAppProductMaster_() {
     });
   }
 
-  let inserted = 0, backfilled = 0;
+  let inserted = 0, backfilled = 0, updated = 0;
   latestBySeiban.forEach(info => {
     if (!info.product) return;
     let rowNum = rowBySeiban.get(info.seiban);
+    const alreadyLinked = !!rowNum;
 
     if (!rowNum) {
       // 製番未リンクの既存行があれば新規追加せずそこに製番を後付けする
@@ -2041,12 +2042,71 @@ function syncSeibanToAppProductMaster_() {
       appSheet.appendRow(['SB' + String(info.seiban).padStart(4, '0'), info.product, '製品', '', info.brand, info.plan]);
       appSheet.getRange(appSheet.getLastRow(), appSeibanCol).setValue(info.seiban);
       inserted++;
+      return;
+    }
+
+    if (alreadyLinked) {
+      // 製番で既にリンク済みの行：外部スケジュール表側で製品名・ブランド・企画名が
+      // 変更されていたら追随させる（サンプル製品名称は途中で改名されることがあるため。
+      // 企画名は変わらない前提だが念のため一緒に更新する。2026-07-24発覚）
+      const cur = appSheet.getRange(rowNum, 2, 1, 5).getValues()[0];  // B〜F: 製品名/区分/シーズン/ブランド/企画名
+      const curName  = String(cur[0] || '').trim();
+      const curBrand = String(cur[3] || '').trim();
+      const curPlan  = String(cur[4] || '').trim();
+      if (curName !== info.product || curBrand !== info.brand || curPlan !== info.plan) {
+        appSheet.getRange(rowNum, 2).setValue(info.product);
+        appSheet.getRange(rowNum, 5).setValue(info.brand);
+        appSheet.getRange(rowNum, 6).setValue(info.plan);
+        updated++;
+      }
     }
   });
 
-  if (inserted > 0 || backfilled > 0) {
-    Logger.log('内部製品マスタ同期: 新規追加' + inserted + '件 / 製番バックフィル' + backfilled + '件');
+  if (inserted > 0 || backfilled > 0 || updated > 0) {
+    Logger.log('内部製品マスタ同期: 新規追加' + inserted + '件 / 製番バックフィル' + backfilled + '件 / 名称更新' + updated + '件');
   }
+}
+
+// ================================================================
+// 孤立した製品マスタ行のクリーンアップ（2026-07-24）
+// 製品名の改名・製番未リンクの手動追加などにより、外部スケジュール表に
+// 対応する行が一切見つからなくなった製品を、ユーザーが個別確認した上で削除する
+// ================================================================
+function cleanupOrphanedProducts() {
+  const ORPHANED_NAMES = [
+    'ミニボストン',
+    '(仮)新型バッグ',
+    '(仮)財布',
+    'なんばバック(仮)',
+    '27SS_コレクションライン_Rubber Bag',
+    'ユニークプロダクト / クエンチャー（6月）',
+    'トート（3型）胴修正',
+    'ライスバッグ',
+    'スエードトート・ストラップ',
+    'カブセトート',
+    'イヤホンアクセサリー',
+    'ユニークプロダクト_カセットテープMagWear',
+    '横トート',
+    '水風船',
+    'ホーボー撮影用',
+    '量産14本',
+    'A LEATHER ランドライダー量産14本',
+  ];
+  const names = new Set(ORPHANED_NAMES);
+
+  const appSheet = SpreadsheetApp.openById(REPORT_CONFIG.logSSId).getSheetByName('スケジュール');
+  if (!appSheet || appSheet.getLastRow() <= 1) { Logger.log('内部製品マスタが見つからないか空です'); return; }
+
+  const rows = appSheet.getRange(2, 1, appSheet.getLastRow() - 1, 2).getValues();
+  let deleted = 0;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const name = String(rows[i][1] || '').trim();
+    if (names.has(name)) {
+      appSheet.deleteRow(i + 2);
+      deleted++;
+    }
+  }
+  Logger.log('孤立製品クリーンアップ完了: ' + deleted + '件削除');
 }
 
 // 手動テスト用ラッパー（GASエディタから実行。トリガー設定前に必ず1回実行して結果を確認する）
@@ -2140,6 +2200,69 @@ function setupMonthlyTrigger() {
   ScriptApp.newTrigger('generateMonthlyReport')
     .timeBased().onMonthDay(1).atHour(8).create();
   Logger.log('月次トリガー設定完了: 毎月1日 8:00');
+}
+
+// ================================================================
+// デバッグ：外部スケジュール表と日報アプリ製品マスタの件数差分を調査（2026-07-24）
+// 外部スケジュール表の「アクティブ（未完了）な製品名」の集合と、日報アプリの
+// 製品マスタ全行を突き合わせ、重複行・孤立行（スケジュール側に無い/完了扱い）を洗い出す
+// ================================================================
+function debugProductCountMismatch() {
+  const scheduleSheet = SpreadsheetApp.openById(REPORT_CONFIG.scheduleSSId).getSheetByName(REPORT_CONFIG.scheduleSheetName);
+  const seibanCol = getOrCreateSeibanColumn_(scheduleSheet);
+  const lastRow = scheduleSheet.getLastRow();
+  const rawRows = lastRow >= 6 ? scheduleSheet.getRange(6, 1, lastRow - 5, Math.max(seibanCol, 15)).getValues() : [];
+
+  const ARCHIVE_STATUSES = new Set(['完了', '中断']);
+
+  // 外部スケジュール表：製品名ごとのステータス集計 → アクティブ（未完了）な製品名一覧
+  const statusesByName = new Map();
+  rawRows.forEach(r => {
+    const name = String(r[S.product] || '').trim();
+    if (!name) return;
+    if (!statusesByName.has(name)) statusesByName.set(name, []);
+    statusesByName.get(name).push(String(r[S.status] || '').trim());
+  });
+  const activeNames = new Set(
+    [...statusesByName.entries()]
+      .filter(([, statuses]) => !(statuses.length > 0 && statuses.every(s => ARCHIVE_STATUSES.has(s))))
+      .map(([name]) => name)
+  );
+  Logger.log('外部スケジュール表: 製品名ユニーク数=' + statusesByName.size + ' / うちアクティブ(未完了)=' + activeNames.size);
+
+  // 日報アプリの製品マスタ
+  const appSheet = SpreadsheetApp.openById(REPORT_CONFIG.logSSId).getSheetByName('スケジュール');
+  const appLastRow = appSheet.getLastRow();
+  const appRows = appLastRow > 1 ? appSheet.getRange(2, 1, appLastRow - 1, appSheet.getLastColumn()).getValues() : [];
+  Logger.log('日報アプリ 製品マスタ: 行数=' + appRows.length);
+
+  // 同じ製品名が複数行あるかチェック
+  const nameCount = new Map();
+  appRows.forEach(r => {
+    const name = String(r[1] || '').trim();
+    if (name) nameCount.set(name, (nameCount.get(name) || 0) + 1);
+  });
+  const dupNames = [...nameCount.entries()].filter(([, c]) => c > 1);
+  if (dupNames.length > 0) {
+    Logger.log('--- 日報アプリ側で同じ製品名が複数行ある（' + dupNames.length + '件）---');
+    dupNames.forEach(([name, c]) => Logger.log('「' + name + '」: ' + c + '行'));
+  } else {
+    Logger.log('日報アプリ側の重複製品名: なし');
+  }
+
+  // アクティブなスケジュールに存在しない（＝本来消えているはずの）app行
+  Logger.log('--- 日報アプリにはあるが、外部スケジュール表でアクティブでない製品 ---');
+  let extraCount = 0;
+  appRows.forEach(r => {
+    const name = String(r[1] || '').trim();
+    if (!name) return;
+    if (!activeNames.has(name)) {
+      extraCount++;
+      const inSchedule = statusesByName.has(name);
+      Logger.log('「' + name + '」 ID=' + r[0] + ' ' + (inSchedule ? '（スケジュールでは完了/中断のみ）' : '（外部スケジュール表に存在しない＝手動追加または孤立）'));
+    }
+  });
+  Logger.log('=== 差分候補: ' + extraCount + '件 ===');
 }
 
 // ================================================================

@@ -365,17 +365,17 @@ tr:active td{background:#f5fbfb}
     <div class="acc-body">
       <p class="setting-note">⚠ 製品名を入力する際は、集計時に参照できるよう正式名称またはスケジュール表と完全一致させてください。</p>
       <div class="row">
-        <div class="fg w2"><label>製品/販促</label>
-          <select id="p-category">
-            <option value="製品">製品</option>
-            <option value="販促">販促</option>
-          </select>
-        </div>
         <div class="fg"><label>シーズン・型振・VMD</label>
           <input type="text" id="p-season" placeholder="例: 2027SS / VN型振り">
         </div>
         <div class="fg"><label>ブランド</label>
           <input type="text" id="p-brand" placeholder="例: TSUCHIYA">
+        </div>
+        <div class="fg w2"><label>製品/販促</label>
+          <select id="p-category">
+            <option value="製品">製品</option>
+            <option value="販促">販促</option>
+          </select>
         </div>
         <div class="fg"><label>企画名</label>
           <input type="text" id="p-plan" placeholder="例: 27SS 新メンズライン">
@@ -1467,13 +1467,13 @@ function renderLists() {
 
   document.getElementById('list-p').innerHTML = S.schedules.length
     ? mTable(
-        ['製品名','製品/販促','シーズン・型振・VMD','ブランド','企画名'],
+        ['シーズン・型振・VMD','ブランド','製品/販促','企画名','製品名'],
         S.schedules.map(s => [
-          `<strong title="${esc(s.name)}">${esc(s.name)}</strong>`,
-          `<span class="badge ${s.category==='販促'?'b-or':'b-bl'}">${s.category==='販促'?'販促':'製品'}</span>`,
           s.season ? `<span title="${esc(s.season)}">${esc(s.season)}</span>` : '—',
           s.brand  ? `<span title="${esc(s.brand)}">${esc(s.brand)}</span>`   : '—',
+          `<span class="badge ${s.category==='販促'?'b-or':'b-bl'}">${s.category==='販促'?'販促':'製品'}</span>`,
           s.plan   ? `<span title="${esc(s.plan)}">${esc(s.plan)}</span>`     : '—',
+          `<strong title="${esc(s.name)}">${esc(s.name)}</strong>`,
           `<button class="btn btn-mono btn-sm" onclick="editSchedule('${esc(s.name)}')">修正</button>
            <button class="btn btn-d btn-sm" onclick="delSchedule('${esc(s.name)}')">削除</button>`
         ])

@@ -1855,6 +1855,85 @@ function refreshMonthlyReport(year, month) {
 // 2026年07月を本日時点のデータで再集計するラッパー（③〜⑧の該当行削除→再生成→サマリー更新）
 function refresh202607() { refreshMonthlyReport(2026, 7); }
 
+// 月を指定せず「今月」を自動判定して再集計するラッパー（毎月新しいrun2026XX()を作らずに済む）
+function refreshCurrentMonth() {
+  const now = new Date();
+  refreshMonthlyReport(now.getFullYear(), now.getMonth() + 1);
+}
+
+// 月を指定せず「今月」を自動判定してサマリーだけ更新するラッパー
+function runSummaryCurrentMonth() {
+  const now = new Date();
+  generateSummarySheet(now.getFullYear(), now.getMonth() + 1);
+}
+
+// ================================================================
+// 特定週を「該当行削除→再実行」で手動更新するための週次版refresh
+// ①②は集計開始日・集計終了日が完全一致する行があると追記をスキップする設計のため、
+// 遅れて入力された日報（イワブチさんの遅延まとめ入力など）を反映するには、
+// 該当週の行を一度削除してから appendToWeeklyTrend/appendToWorkerWeekly を呼び直す必要がある。
+// ================================================================
+function refreshWeeklyReport(startDate, endDate) {
+  startDate = startDate instanceof Date ? new Date(startDate) : new Date(startDate);
+  endDate   = endDate   instanceof Date ? new Date(endDate)   : new Date(endDate);
+  startDate.setHours(0, 0, 0, 0);
+  endDate.setHours(23, 59, 59, 999);
+
+  const reportSS = getOrCreateReportSS();
+  const sk = dFmt(startDate), ek = dFmt(endDate);
+
+  ['①週次推移', '②職人別週次'].forEach(name => {
+    const sheet = reportSS.getSheetByName(name);
+    if (!sheet || sheet.getLastRow() < 2) return;
+    const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
+    const rowsToDelete = values
+      .map((r, i) => ({
+        row: i + 2,
+        a: r[0] instanceof Date ? dFmt(r[0]) : String(r[0]),
+        b: r[1] instanceof Date ? dFmt(r[1]) : String(r[1]),
+      }))
+      .filter(({ a, b }) => a === sk && b === ek)
+      .map(({ row }) => row);
+    rowsToDelete.reverse().forEach(row => sheet.deleteRow(row));
+    Logger.log(name + ': ' + sk + '〜' + ek + ' の行を' + rowsToDelete.length + '件削除');
+  });
+
+  const logRows = getSheetData(REPORT_CONFIG.logSSId, REPORT_CONFIG.logSheetName, 19);
+  appendToWeeklyTrend(reportSS, logRows, startDate, endDate);
+  appendToWorkerWeekly(reportSS, logRows, startDate, endDate);
+  Logger.log(sk + '〜' + ek + ' 週次再集計完了（本日までのデータを反映）');
+}
+
+// 直近の自動集計週（先週分）を本日時点のデータで再集計するラッパー
+function refreshLastWeek() {
+  const { startDate, endDate } = getWeekRange();
+  refreshWeeklyReport(startDate, endDate);
+}
+
+// ================================================================
+// スプレッドシートのカスタムメニュー（試作日報：ログ取り を開いたときに表示）
+// GASエディタの関数プルダウンを毎回探さなくても、ここから主要な手動操作を実行できる
+// ================================================================
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('📋 レポート操作')
+    .addItem('先週分の週次レポートを再集計', 'menuRefreshLastWeek')
+    .addItem('今月のレポートを再集計（月次③〜⑧＋サマリー）', 'menuRefreshCurrentMonth')
+    .addItem('サマリーだけ更新', 'menuRunSummaryCurrentMonth')
+    .addSeparator()
+    .addItem('製番を手動同期', 'menuRunSeibanSync')
+    .addItem('未突合製品を調査（結果は実行ログに出力）', 'menuDebugProductCountMismatch')
+    .addItem('未入力リマインドのテスト（送信なし・結果は実行ログに出力）', 'menuDebugMissingReports')
+    .addToUi();
+}
+
+function menuRefreshLastWeek()          { refreshLastWeek();          SpreadsheetApp.getUi().alert('先週分の週次レポートを再集計しました。'); }
+function menuRefreshCurrentMonth()      { refreshCurrentMonth();      SpreadsheetApp.getUi().alert('今月のレポートを再集計しました。'); }
+function menuRunSummaryCurrentMonth()   { runSummaryCurrentMonth();   SpreadsheetApp.getUi().alert('サマリーを更新しました。'); }
+function menuRunSeibanSync()            { runSeibanSync();            SpreadsheetApp.getUi().alert('製番の同期を実行しました。'); }
+function menuDebugProductCountMismatch(){ debugProductCountMismatch();SpreadsheetApp.getUi().alert('調査結果を実行ログに出力しました（Apps Scriptエディタの「実行数」から確認できます）。'); }
+function menuDebugMissingReports()      { debugMissingReports();      SpreadsheetApp.getUi().alert('リマインド対象を実行ログに出力しました（メールは送信されません）。'); }
+
 function runProductWorker202606() {
   const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       19);
   const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 15, 6);

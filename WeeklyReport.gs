@@ -73,7 +73,9 @@ const PRODUCT_PHASE_KEYS = [...DETAIL_PHASE_KEYS, '試験体', '修理', 'SOP', 
 // 2026-07-21: 実シート確認の結果、D列に「製品or販促」列も新設されていたため、
 //             ブランド（C）より後ろの企画名以降はさらに1列分右へずれていた（合計2列分シフト）
 const S = {
+  season:       1,  // B: シーズン・型振・VMD（採番表からのプル型自動補完で使用。2026-08-03追加）
   brand:        2,  // C: ブランド
+  category:     3,  // D: 製品or販促（採番表からのプル型自動補完で使用。2026-08-03追加）
   planName:     4,  // E: 企画名
   product:      5,  // F: サンプル製品名称
   phase:        8,  // I: サンプルフェーズ
@@ -1911,7 +1913,8 @@ function refreshLastWeek() {
 }
 
 // ================================================================
-// スプレッドシートのカスタムメニュー（試作日報：ログ取り を開いたときに表示）
+// スプレッドシートのカスタムメニュー（このスクリプトが紐づく「WeeklyReport」を開いたときに表示。
+// Code.gs/index.htmlは別プロジェクトで「試作日報：ログ取り」に紐づいており、ここには出ない。2026-07-28確認）
 // GASエディタの関数プルダウンを毎回探さなくても、ここから主要な手動操作を実行できる
 // ================================================================
 function onOpen() {
@@ -1921,6 +1924,7 @@ function onOpen() {
     .addItem('今月のレポートを再集計（月次③〜⑧＋サマリー）', 'menuRefreshCurrentMonth')
     .addItem('サマリーだけ更新', 'menuRunSummaryCurrentMonth')
     .addSeparator()
+    .addItem('採番表を処理（新規登録の番号発行）', 'menuRunSeibanTableProcessing')
     .addItem('製番を手動同期', 'menuRunSeibanSync')
     .addItem('未突合製品を調査（結果は実行ログに出力）', 'menuDebugProductCountMismatch')
     .addItem('未入力リマインドのテスト（送信なし・結果は実行ログに出力）', 'menuDebugMissingReports')
@@ -1930,6 +1934,7 @@ function onOpen() {
 function menuRefreshLastWeek()          { refreshLastWeek();          SpreadsheetApp.getUi().alert('先週分の週次レポートを再集計しました。'); }
 function menuRefreshCurrentMonth()      { refreshCurrentMonth();      SpreadsheetApp.getUi().alert('今月のレポートを再集計しました。'); }
 function menuRunSummaryCurrentMonth()   { runSummaryCurrentMonth();   SpreadsheetApp.getUi().alert('サマリーを更新しました。'); }
+function menuRunSeibanTableProcessing() { runSeibanTableProcessing(); SpreadsheetApp.getUi().alert('採番表を処理しました。'); }
 function menuRunSeibanSync()            { runSeibanSync();            SpreadsheetApp.getUi().alert('製番の同期を実行しました。'); }
 function menuDebugProductCountMismatch(){ debugProductCountMismatch();SpreadsheetApp.getUi().alert('調査結果を実行ログに出力しました（Apps Scriptエディタの「実行数」から確認できます）。'); }
 function menuDebugMissingReports()      { debugMissingReports();      SpreadsheetApp.getUi().alert('リマインド対象を実行ログに出力しました（メールは送信されません）。'); }
@@ -1944,25 +1949,36 @@ function runProductWorker202606() {
 }
 
 // ================================================================
-// 製番（製造番号）システム（2026-07-16定例発案・2026-07-17設計）
+// 製番（製造番号）システム（2026-07-16定例発案・2026-08-03改訂）
 //
 // 目的：日報アプリの製品選択リスト（内部製品マスタ）と、嶋谷さんが管理する
 // 外部スケジュール表は別物のスプレッドシートで、これまで同じ製品名を両方に
 // 手入力する二重管理だった。これが表記ゆれ・未突合の原因になっていたため、
-// 外部スケジュール表への入力を起点に、製品単位で一意の製番を自動発行し、
-// 内部製品マスタへも自動反映する（名前ではなく製番で紐付ける）。
+// 製品単位で一意の製番（採番表が正本）を発行し、名前ではなく製番で紐付ける。
 //
-// 粒度：製品単位（ブランド・企画名・製品名が一致する行は同じ製番を使い回す）。
-// 外部スケジュール表は1行=1フェーズのため、フェーズが進んでも製番は変わらない。
+// データの流れ（2026-08-03確定）：
+//  ①採番表に案件を登録すると自動で試作番号を発行（自動使い回しはしない）
+//  ②外部スケジュール表側で、上長が作った行のA列に試作番号を入力/選択すると、
+//    採番表を参照してB〜F列を自動補完する（プル型。行の追加はシステムでは行わない）
+//  ③外部スケジュール表の製番を内部製品マスタへ自動反映（10分おき、既存のまま）
+//
+// 粒度：外部スケジュール表は基本1行=1製品（正本）。担当者やフェーズが変わっても
+// 行は増やさず、同じ行の可変列（G担当・H サンプル担当・I サンプルフェーズ・
+// L/M スケジュール日程・O以降ステータス）を上長が書き換えて運用する
+// （2026-08-03確定。以前の「フェーズが進むたびに新しい行を作る」想定は誤りだった）。
+// 同じ番号を複数行に入力すること自体は技術的には可能（handleExternalScheduleEdit_は
+// 行数を問わない）だが、通常運用としては行わない想定。
 // SOP等いったん「完了」で内部製品マスタの選択肢から消えた製品が後で再開しても、
 // 同じ製番で再びリンクされる。
 //
-// フォーマット：当面はシンプルな連番。ブランドコード等を含めた意味のある表示形式は
-// 検討中のため、連番はそのままに表示レイヤーとして後日追加する想定（2026-07-17時点）。
+// フォーマット：ブランドコード-区分(G/P)+年-連番（例: TK-G26-0001）。
+// 連番は区分ごと・年ごとにリセットされる（2026-07-22確定）。
 //
-// 運用：10分おきの時間主導トリガーで自動実行（setupSeibanTrigger）。
+// 運用：
+//  - syncSeibanToAppProductMaster_ … 10分おきの時間主導トリガー（setupSeibanTrigger、既存）
+//  - handleExternalScheduleEdit_ … インストール型トリガー（setupExternalScheduleEditTrigger、新規）
 // 初回はrunSeibanSync()を手動実行し、ログと両シートの内容を確認してから
-// トリガーを設定すること。
+// 各トリガーを設定すること。
 // ================================================================
 const SEIBAN_HEADER = '製番';
 
@@ -1976,6 +1992,13 @@ function getOrCreateSeibanColumn_(sheet) {
   const col = lastCol + 1;
   sheet.getRange(1, col).setValue(SEIBAN_HEADER).setFontWeight('bold');
   return col;
+}
+
+// 製番セルの値を「文字列の識別子」として扱うための共通ヘルパー。
+// 旧形式（単純な整数）・新形式（TK-G26-0001のようなブランド付き文字列）の
+// どちらも「空でなければ採番済み」として一貫して扱えるようにする（2026-07-29）。
+function seibanKey_(val) {
+  return String(val || '').trim();
 }
 
 // 製番列を先頭（A列）に移動する（2026-07-17: 一番左に表示したいというユーザー要望で1回限り実行）。
@@ -1995,90 +2018,336 @@ function moveSeibanColumnsToFront() {
   Logger.log('製番列の先頭移動 完了（外部スケジュール表のみ）');
 }
 
-// ブランド・企画名・製品名から製品の同一性判定キーを作る（製番がまだ無い行の突合用）
-function scheduleProductKey_(row) {
-  const brand = String(row[S.brand]    || '').trim();
-  const plan  = String(row[S.planName] || '').trim();
-  const prod  = String(row[S.product]  || '').trim();
-  if (!prod) return '';
-  return brand + '\t' + plan + '\t' + prod;
+// ================================================================
+// 採番表（登録フロー）2026-07-29実装・2026-08-03上長MTG差分を受けて改訂
+//
+// 案件登録の原本。ブランド・シーズン・区分・企画名・製品名を入力すると、
+// ブランド付きの新形式試作番号（例: TK-G26-0001）を自動発行する。
+// 外部スケジュール表と同じSS（REPORT_CONFIG.scheduleSSId）に新タブとして持つ。
+//
+// 番号は完全一致（ブランド＋企画名＋製品名）であっても自動では使い回さず、
+// 未採番の行には常に新しい番号を発行する（上長がスケジュールの主導権を持つ
+// という2026-07-30MTGの結論を受け、無条件統合のリスクを避けるため廃止）。
+// 同じ「ブランド＋企画名」の既存行があれば「類似候補」列に参考として提示する
+// だけにとどめ、本当に番号を使い回したい場合は上長が外部スケジュール表側で
+// 既存番号を直接入力する運用にする（備考欄はシステムが書かず、上長の自由記述
+// メモ専用として空けておく）。
+//
+// 外部スケジュール表への反映（A〜F列の自動補完）は、採番表への登録時ではなく
+// 外部スケジュール表側で試作番号が入力/選択されたタイミングで行う（プル型・
+// handleExternalScheduleEdit_を参照）。ここでの自動行追加は行わない。
+// ================================================================
+const SEIBAN_TABLE_SHEET_NAME = '採番表';
+const SEIBAN_TABLE_HEADERS = ['試作番号', 'シーズン・型振・VMD', 'ブランド', '区分', '企画名', '製品名', '登録日', '備考', '類似候補'];
+
+// 採番表の列インデックス（0始まり）
+// note（備考）は上長の自由記述専用。システムが書くヒントはcandidate（類似候補）へ分離する（2026-08-03）
+const T = {
+  seiban: 0, season: 1, brand: 2, category: 3,
+  planName: 4, product: 5, registeredDate: 6, note: 7, candidate: 8,
+};
+
+// ブランド名 → コード（project_seiban_system.md 2026-07-22確定のマッピング）
+const BRAND_CODES = {
+  'TSUCHIYA': 'TK',
+  '土屋鞄のランドセル': 'TR',
+  'objcts': 'OB',
+  'grirose': 'GR',
+  'depsoa': 'DP',
+  'ATTITU': 'AT',
+  'LASTFRAME': 'LF',
+};
+
+// 採番表タブが無ければヘッダー付きで新設して返す。
+// 既にタブがある場合も、SEIBAN_TABLE_HEADERSに後から増えた列（類似候補など）が
+// 末尾に無ければ追記する（getOrCreateSeibanColumn_と同じ「無ければ追加」パターン）
+function getOrCreateSeibanTable_(ss) {
+  let sheet = ss.getSheetByName(SEIBAN_TABLE_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(SEIBAN_TABLE_SHEET_NAME);
+    sheet.getRange(1, 1, 1, SEIBAN_TABLE_HEADERS.length)
+      .setValues([SEIBAN_TABLE_HEADERS])
+      .setBackground('#37474F').setFontColor('#FFFFFF').setFontWeight('bold').setHorizontalAlignment('center');
+    sheet.setFrozenRows(1);
+    Logger.log('採番表タブを新設しました');
+    return sheet;
+  }
+  const lastCol = sheet.getLastColumn();
+  if (lastCol < SEIBAN_TABLE_HEADERS.length) {
+    sheet.getRange(1, lastCol + 1, 1, SEIBAN_TABLE_HEADERS.length - lastCol)
+      .setValues([SEIBAN_TABLE_HEADERS.slice(lastCol)])
+      .setBackground('#37474F').setFontColor('#FFFFFF').setFontWeight('bold').setHorizontalAlignment('center');
+    Logger.log('採番表タブに不足していた列を追加しました: ' + SEIBAN_TABLE_HEADERS.slice(lastCol).join('、'));
+  }
+  return sheet;
 }
 
-// ① 外部スケジュール表の未採番の行に製番を発行する。
-// 同じ製品（ブランド・企画名・製品名が一致）の行には既存の製番を使い回す。
-function assignSeibanNumbers_() {
-  const sheet = SpreadsheetApp.openById(REPORT_CONFIG.scheduleSSId).getSheetByName(REPORT_CONFIG.scheduleSheetName);
+// ブランド名→コード変換。未登録ブランドはログ警告つきで暫定コードを返す
+function brandCode_(brand) {
+  const b = String(brand || '').trim();
+  if (BRAND_CODES[b]) return BRAND_CODES[b];
+  Logger.log('採番表: ブランドコード未登録「' + b + '」。暫定コードを使用（BRAND_CODESへの追加を検討してください）');
+  return b.slice(0, 2).toUpperCase() || 'XX';
+}
+
+// 区分→コード変換（製品=G / 販促=P）
+function categoryCode_(category) {
+  return String(category || '').trim() === '販促' ? 'P' : 'G';
+}
+
+// シーズン文字列から年の下2桁を抜き出す（例: '26AW'→'26'、'2027SS'→'27'）
+function seasonYearSuffix_(season) {
+  const m = String(season || '').match(/\d+/);
+  if (!m) return '00';
+  return m[0].slice(-2).padStart(2, '0');
+}
+
+// 採番表の未採番行に試作番号を発行する（本体）。
+// dryRun=true のときは何も書き込まず、判定結果だけを返す（debugSeibanTable用）。
+function processSeibanTable_(dryRun) {
+  const ss = SpreadsheetApp.openById(REPORT_CONFIG.scheduleSSId);
+  const sheet = getOrCreateSeibanTable_(ss);
   const lastRow = sheet.getLastRow();
-  // データ行は6行目から（1〜5行目は見出し・注意書きのため対象外）
-  if (lastRow < 6) return sheet;
+  const result = { assigned: 0, log: [] };
+  if (lastRow < 2) return result;
 
-  const seibanCol = getOrCreateSeibanColumn_(sheet);
-  const readCols  = Math.max(seibanCol, 15);
-  const rows = sheet.getRange(6, 1, lastRow - 5, readCols).getValues();
+  const rows = sheet.getRange(2, 1, lastRow - 1, SEIBAN_TABLE_HEADERS.length).getValues();
 
-  // 既存の製番から (ブランド|企画名|製品名) → 製番 のマップと最大値を作る
-  const keyToSeiban = new Map();
-  let maxSeiban = 0;
+  // 類似候補ヒント用のマップと、区分×年ごとの最大連番を作る
+  const planCandidates = new Map();   // ブランド\t企画名 → [{seiban, product}, ...]
+  const maxByBucket     = new Map();  // 区分+年（例: 'G26'） → 最大連番
+  const seibanPattern = /^([A-Z0-9]+)-([GP])(\d{2})-(\d+)$/;
+
   rows.forEach(r => {
-    const seiban = Number(r[seibanCol - 1]) || 0;
-    if (seiban <= 0) return;
-    maxSeiban = Math.max(maxSeiban, seiban);
-    const key = scheduleProductKey_(r);
-    if (key && !keyToSeiban.has(key)) keyToSeiban.set(key, seiban);
+    const seiban = seibanKey_(r[T.seiban]);
+    if (!seiban) return;
+    const brand = String(r[T.brand] || '').trim();
+    const plan  = String(r[T.planName] || '').trim();
+    const prod  = String(r[T.product] || '').trim();
+    if (brand && plan) {
+      const planKey = brand + '\t' + plan;
+      if (!planCandidates.has(planKey)) planCandidates.set(planKey, []);
+      planCandidates.get(planKey).push({ seiban, product: prod });
+    }
+    const m = seiban.match(seibanPattern);
+    if (m) {
+      const bucketKey = m[2] + m[3];
+      const num = parseInt(m[4], 10);
+      maxByBucket.set(bucketKey, Math.max(maxByBucket.get(bucketKey) || 0, num));
+    }
   });
 
-  // 未採番の行に、既存製品なら使い回し・新規なら次の番号を発行
-  let nextSeiban = maxSeiban + 1;
-  let assigned = 0;
+  // 未採番の行に常に新しい番号を発行（自動使い回しはしない。2026-08-03）
+  const todayStr = dFmt(new Date());
   rows.forEach((r, i) => {
-    if ((Number(r[seibanCol - 1]) || 0) > 0) return;
-    const key = scheduleProductKey_(r);
-    if (!key) return;
-    let seiban = keyToSeiban.get(key);
-    if (!seiban) { seiban = nextSeiban++; keyToSeiban.set(key, seiban); }
-    sheet.getRange(i + 6, seibanCol).setValue(seiban);
-    assigned++;
+    if (seibanKey_(r[T.seiban]) !== '') return;
+    const season = String(r[T.season]  || '').trim();
+    const brand  = String(r[T.brand]   || '').trim();
+    const cat    = String(r[T.category]|| '').trim();
+    const plan   = String(r[T.planName]|| '').trim();
+    const prod   = String(r[T.product] || '').trim();
+    if (!season || !brand || !cat || !plan || !prod) return;  // 必須項目が揃っていない行はスキップ
+
+    const planKey = brand + '\t' + plan;
+    const code = brandCode_(brand);
+    const cc   = categoryCode_(cat);
+    const yy   = seasonYearSuffix_(season);
+    const bucketKey = cc + yy;
+    const next = (maxByBucket.get(bucketKey) || 0) + 1;
+    maxByBucket.set(bucketKey, next);
+    const newSeiban = code + '-' + cc + yy + '-' + String(next).padStart(4, '0');
+    result.assigned++;
+
+    let hint = '';
+    const candidates = planCandidates.get(planKey) || [];
+    if (candidates.length > 0) {
+      hint = '参考: 同企画内の既存番号 ' + candidates.map(c => c.seiban + '（' + c.product + '）').join('、');
+    }
+    if (!planCandidates.has(planKey)) planCandidates.set(planKey, []);
+    planCandidates.get(planKey).push({ seiban: newSeiban, product: prod });
+
+    const rowNum = i + 2;
+    result.log.push(rowNum + '行目: ' + newSeiban + (hint ? '（' + hint + '）' : ''));
+    if (!dryRun) {
+      sheet.getRange(rowNum, T.seiban + 1).setValue(newSeiban);
+      if (!r[T.registeredDate]) sheet.getRange(rowNum, T.registeredDate + 1).setValue(todayStr);
+      if (hint) sheet.getRange(rowNum, T.candidate + 1).setValue(hint);
+    }
   });
 
-  if (assigned > 0) Logger.log('製番発行: ' + assigned + '件（外部スケジュール表）');
-  return sheet;
+  // dryRun時はdebugSeibanTable()側で詳細ログを出すため、ここでは実書き込み時のみ要約を出す
+  if (!dryRun && result.assigned > 0) {
+    Logger.log('採番表処理: 新規発行' + result.assigned + '件');
+  }
+  return result;
+}
+
+// プレビュー用：何も書き込まず、採番表の未採番行にどの番号が振られるか・
+// どんなヒントが類似候補列に書かれるかをログ出力するだけ（実運用トリガーに任せる前に確認する）
+function debugSeibanTable() {
+  const result = processSeibanTable_(true);
+  Logger.log('=== 採番表 処理プレビュー（書き込みなし） ===');
+  if (result.log.length === 0) { Logger.log('対象行なし'); return; }
+  result.log.forEach(line => Logger.log('  ' + line));
+  Logger.log('新規発行予定' + result.assigned + '件');
+}
+
+// 手動実行用ラッパー（runSeibanSyncと同じ位置づけ）
+function runSeibanTableProcessing() {
+  processSeibanTable_(false);
+  Logger.log('採番表処理 手動実行 完了');
+}
+
+// ================================================================
+// 外部スケジュール表への反映（プル型・ルックアップ）2026-08-03実装
+//
+// 上長がガントチャート側で新しい行を作り、A列（試作番号）に番号を入力または
+// 選択すると、採番表を参照してB〜F列（シーズン・ブランド・区分・企画名・
+// 製品名）を自動補完する。行を作る・作らない判断とタイミングは上長に委ねる
+// （システム側で新しい行を追加・挿入する処理は行わない＝2026-07-30MTGの結論）。
+// ================================================================
+
+// 採番表A〜F列を一括読み込みし、試作番号→案件基本情報のMapを返す
+// （syncSeibanToAppProductMaster_のように多数の番号をまとめて引く場合に使う）
+function readSeibanTableMap_() {
+  const ss = SpreadsheetApp.openById(REPORT_CONFIG.scheduleSSId);
+  const sheet = getOrCreateSeibanTable_(ss);
+  const lastRow = sheet.getLastRow();
+  const map = new Map();
+  if (lastRow < 2) return map;
+  sheet.getRange(2, 1, lastRow - 1, 6).getValues().forEach(r => {
+    const seiban = seibanKey_(r[T.seiban]);
+    if (!seiban) return;
+    map.set(seiban, {
+      season:   String(r[T.season]   || '').trim(),
+      brand:    String(r[T.brand]    || '').trim(),
+      category: String(r[T.category] || '').trim(),
+      planName: String(r[T.planName] || '').trim(),
+      product:  String(r[T.product]  || '').trim(),
+    });
+  });
+  return map;
+}
+
+// 採番表を試作番号で引く（外部スケジュール表の編集イベントごとに呼ばれるため、
+// A列だけ先に読んで該当行を特定 → その行のB〜Fだけピンポイントで読む2段階方式にし、
+// 編集のたびに採番表全体を読まないようにする）。見つからなければnull
+function lookupSeibanMasterByNumber_(seiban) {
+  const key = seibanKey_(seiban);
+  if (!key) return null;
+  const ss = SpreadsheetApp.openById(REPORT_CONFIG.scheduleSSId);
+  const sheet = getOrCreateSeibanTable_(ss);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
+
+  const seibanColValues = sheet.getRange(2, T.seiban + 1, lastRow - 1, 1).getValues();
+  const idx = seibanColValues.findIndex(r => seibanKey_(r[0]) === key);
+  if (idx === -1) return null;
+
+  const rowNum = idx + 2;
+  const r = sheet.getRange(rowNum, 1, 1, 6).getValues()[0];
+  return {
+    season:   String(r[T.season]   || '').trim(),
+    brand:    String(r[T.brand]    || '').trim(),
+    category: String(r[T.category] || '').trim(),
+    planName: String(r[T.planName] || '').trim(),
+    product:  String(r[T.product]  || '').trim(),
+  };
+}
+
+// 外部スケジュール表の該当行のB〜F列（シーズン・ブランド・区分・企画名・製品名）を書き込む
+function fillExternalScheduleRow_(sheet, rowNum, info) {
+  sheet.getRange(rowNum, S.season    + 1).setValue(info.season);
+  sheet.getRange(rowNum, S.brand     + 1).setValue(info.brand);
+  sheet.getRange(rowNum, S.category  + 1).setValue(info.category);
+  sheet.getRange(rowNum, S.planName  + 1).setValue(info.planName);
+  sheet.getRange(rowNum, S.product   + 1).setValue(info.product);
+}
+
+// インストール型トリガーの本体：外部スケジュール表のA列（試作番号）が編集されたら、
+// 採番表を引いてB〜F列を自動補完する
+function handleExternalScheduleEdit_(e) {
+  if (!e || !e.range) return;
+  const editedSheet = e.range.getSheet();
+  if (e.source.getId() !== REPORT_CONFIG.scheduleSSId) return;
+  if (editedSheet.getName() !== REPORT_CONFIG.scheduleSheetName) return;
+  if (e.range.getNumRows() !== 1 || e.range.getNumColumns() !== 1) return;  // 単一セル編集のみ対象
+
+  const row = e.range.getRow();
+  if (row < 6) return;  // 1〜5行目は見出し・注意書き
+
+  const seibanCol = getOrCreateSeibanColumn_(editedSheet);
+  if (e.range.getColumn() !== seibanCol) return;
+
+  const seiban = seibanKey_(e.range.getValue());
+  if (!seiban) return;
+
+  const info = lookupSeibanMasterByNumber_(seiban);
+  if (!info) { Logger.log('採番表に見つからない試作番号: ' + seiban); return; }
+  fillExternalScheduleRow_(editedSheet, row, info);
+}
+
+// handleExternalScheduleEdit_用のインストール型トリガーを設定する（初回・変更時に1回だけ手動実行）。
+// 外部スケジュール表はWeeklyReportとは別スプレッドシートのため、単純トリガーonEditでは検知できない
+function setupExternalScheduleEditTrigger() {
+  ScriptApp.getProjectTriggers()
+    .filter(t => t.getHandlerFunction() === 'handleExternalScheduleEdit_')
+    .forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('handleExternalScheduleEdit_')
+    .forSpreadsheet(SpreadsheetApp.openById(REPORT_CONFIG.scheduleSSId))
+    .onEdit()
+    .create();
+  Logger.log('外部スケジュール表 編集トリガー設定完了');
+}
+
+// 手動テスト用：採番表のルックアップ結果をログに出力するだけ（トリガーを設定する前に確認する）
+function debugLookupSeiban(seiban) {
+  const info = lookupSeibanMasterByNumber_(seiban);
+  Logger.log(info ? JSON.stringify(info) : '見つかりませんでした: ' + seiban);
 }
 
 // ② 外部スケジュール表の製番を、日報アプリの内部製品マスタ（スケジュールシート）に反映する。
 // 製番で既存行と突合し、無ければ新規追加・製番未リンクの既存行があればバックフィルする
 // （表記ゆれで手入力されていた過去の行も、製品名が一致すれば製番を後付けできる）。
+// ブランド・企画名・製品名の取得元は、外部スケジュール表ではなく採番表（正本）にする
+// （サンプル製品名称は外部スケジュール表側で改名されることがあるため。2026-08-03変更）
 function syncSeibanToAppProductMaster_() {
-  const extSheet = assignSeibanNumbers_();
+  processSeibanTable_();
+
+  const extSheet = SpreadsheetApp.openById(REPORT_CONFIG.scheduleSSId).getSheetByName(REPORT_CONFIG.scheduleSheetName);
   const lastRow  = extSheet.getLastRow();
   if (lastRow < 6) return;
 
   const seibanCol = getOrCreateSeibanColumn_(extSheet);
   const extRows = extSheet.getRange(6, 1, lastRow - 5, Math.max(seibanCol, 15)).getValues();
+  const seibanMaster = readSeibanTableMap_();
 
   // 製番ごとに全行のステータスを集計（全行完了/中断ならarchiveCompletedSchedulesで
   // 削除された（されるべき）製品なので、同期で復活させない）
+  // ※製番は「文字列の識別子」として扱う（旧形式の整数・新形式のTK-G26-0001どちらも
+  //   同じMapキーとして機能する。2026-07-29修正）
   const ARCHIVE_STATUSES = new Set(['完了', '中断']);
   const statusesBySeiban = new Map();
   extRows.forEach(r => {
-    const seiban = Number(r[seibanCol - 1]) || 0;
+    const seiban = seibanKey_(r[seibanCol - 1]);
     if (!seiban) return;
     if (!statusesBySeiban.has(seiban)) statusesBySeiban.set(seiban, []);
     statusesBySeiban.get(seiban).push(String(r[S.status] || '').trim());
   });
 
-  // 製番ごとの最新情報（同じ製番の行が複数あれば最後の行を採用＝最新のフェーズ情報）
+  // 製番ごとの案件基本情報（採番表を正本として引く。外部スケジュール表に登場する
+  // だけで採番表に見つからない番号＝手入力ミス等は同期対象から除外する）
   const latestBySeiban = new Map();
-  extRows.forEach(r => {
-    const seiban = Number(r[seibanCol - 1]) || 0;
-    if (!seiban) return;
-    const statuses = statusesBySeiban.get(seiban) || [];
-    const allDone = statuses.length > 0 && statuses.every(s => ARCHIVE_STATUSES.has(s));
+  statusesBySeiban.forEach((statuses, seiban) => {
+    const allDone = statuses.every(s => ARCHIVE_STATUSES.has(s));
     if (allDone) return;  // 完了/中断済みは日報アプリに追加・復活させない
+    const info = seibanMaster.get(seiban);
+    if (!info) return;
     latestBySeiban.set(seiban, {
       seiban,
-      brand:   String(r[S.brand]    || '').trim(),
-      plan:    String(r[S.planName] || '').trim(),
-      product: String(r[S.product]  || '').trim(),
+      brand:   info.brand,
+      plan:    info.planName,
+      product: info.product,
     });
   });
   if (latestBySeiban.size === 0) return;
@@ -2094,7 +2363,7 @@ function syncSeibanToAppProductMaster_() {
   if (appLastRow > 1) {
     appSheet.getRange(2, 1, appLastRow - 1, appSeibanCol).getValues().forEach((r, i) => {
       const rowNum  = i + 2;
-      const seiban  = Number(r[appSeibanCol - 1]) || 0;
+      const seiban  = seibanKey_(r[appSeibanCol - 1]);
       if (seiban) rowBySeiban.set(seiban, rowNum);
       const name = String(r[1] || '').trim();  // B列: 製品名
       if (name && !rowByName.has(name)) rowByName.set(name, rowNum);
@@ -2118,7 +2387,10 @@ function syncSeibanToAppProductMaster_() {
 
     if (!rowNum) {
       // 新規追加（製品or販促は既定「製品」・シーズンは空欄。誤りは設定タブで手動修正）
-      appSheet.appendRow(['SB' + String(info.seiban).padStart(4, '0'), info.product, '製品', '', info.brand, info.plan]);
+      // IDは旧形式（単純な整数）ならSB0001のような表示用ID、新形式（ブランド付き文字列）は
+      // それ自体がすでに一意で読みやすいIDなのでそのまま使う
+      const displayId = /^\d+$/.test(info.seiban) ? 'SB' + info.seiban.padStart(4, '0') : info.seiban;
+      appSheet.appendRow([displayId, info.product, '製品', '', info.brand, info.plan]);
       appSheet.getRange(appSheet.getLastRow(), appSeibanCol).setValue(info.seiban);
       inserted++;
       return;
@@ -2840,7 +3112,7 @@ function createUsageGuideDoc() {
     ['実作業最終', '全期間で最も新しい日報の日付'],
     ['作業日数', '実作業最終 − 実作業開始 + 1（カレンダー日数）'],
     ['計画開始', 'スケジュールSSの試作開始日'],
-    ['計画完了', 'スケジュールSSの試作完了日'],
+    ['計画完了', 'スケAジュールSSの試作完了日'],
     ['月内_各フェーズ(h)', '当月・フェーズ大分類別の作業時間(分)合計 ÷ 60（モック〜量産の全フェーズ列）'],
     ['月内_型紙・抜き型(h)', '当月・中分類＝型紙作成・修正／抜き型作成（旧名称含む）の作業時間(分)合計 ÷ 60'],
     ['月内_仮制作〜工程表(h)', '同上（仮制作 / 本制作 / 原価表 / 工程表）各中分類列'],

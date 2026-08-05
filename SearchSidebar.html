@@ -1,0 +1,227 @@
+<!-- 採番表検索サイドバー（SeibanSearch.gsのopenSearchSidebar()から表示される） -->
+<!-- 採番表・【スケジュール】タブは参照のみ。ここから書き込みは行わない -->
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 13px;
+      margin: 0;
+      padding: 12px;
+      color: #202124;
+    }
+    .field { margin-bottom: 10px; }
+    label { display: block; font-size: 11px; color: #5f6368; margin-bottom: 2px; }
+    input[type=text] {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 6px 8px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    button#searchBtn {
+      width: 100%;
+      padding: 8px;
+      background: #1a73e8;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+    button#searchBtn:disabled { background: #9aa0a6; cursor: default; }
+    hr { border: none; border-top: 1px solid #e0e0e0; margin: 14px 0; }
+    #summary {
+      font-size: 12px;
+      color: #5f6368;
+      margin-bottom: 8px;
+      white-space: pre-line;
+    }
+    .result-row { border-bottom: 1px solid #eee; padding: 8px 0; }
+    .result-row:last-child { border-bottom: none; }
+    .r-top { display: flex; align-items: center; justify-content: space-between; }
+    .r-left { display: flex; align-items: center; }
+    .seiban {
+      font-weight: bold;
+      cursor: pointer;
+      text-decoration: underline dotted;
+      padding: 2px 4px;
+      border-radius: 3px;
+    }
+    .seiban:hover { background: #f1f3f4; }
+    .copy-icon { cursor: pointer; margin-left: 4px; font-size: 12px; }
+    .copied { color: #1e8e3e; }
+    .status-badge {
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 10px;
+      color: #fff;
+      white-space: nowrap;
+    }
+    .status-ongoing      { background: #1a73e8; }
+    .status-done         { background: #9aa0a6; }
+    .status-unregistered { background: #e0e0e0; color: #5f6368; }
+    .r-mid { font-size: 12px; color: #3c4043; margin-top: 3px; }
+    .r-bottom { font-size: 11px; color: #80868b; margin-top: 2px; }
+  </style>
+</head>
+<body>
+  <div class="field"><label>試作番号</label><input type="text" id="q-seiban"></div>
+  <div class="field"><label>ブランド</label><input type="text" id="q-brand"></div>
+  <div class="field"><label>企画名</label><input type="text" id="q-plan"></div>
+  <div class="field"><label>製品名</label><input type="text" id="q-product"></div>
+  <button id="searchBtn" onclick="onSearchClick()">検索</button>
+
+  <hr>
+  <div id="summary"></div>
+  <div id="results"></div>
+
+  <script>
+    function onSearchClick() {
+      const criteria = {
+        seiban:  document.getElementById('q-seiban').value,
+        brand:   document.getElementById('q-brand').value,
+        plan:    document.getElementById('q-plan').value,
+        product: document.getElementById('q-product').value,
+      };
+      const hasAny = Object.keys(criteria).some(function (k) {
+        return criteria[k] && criteria[k].trim() !== '';
+      });
+
+      const summary = document.getElementById('summary');
+      const results = document.getElementById('results');
+      summary.style.color = '';
+
+      if (!hasAny) {
+        summary.textContent = '検索条件を入力してください。';
+        results.innerHTML = '';
+        return;
+      }
+
+      const btn = document.getElementById('searchBtn');
+      btn.disabled = true;
+      btn.textContent = '検索中...';
+
+      google.script.run
+        .withSuccessHandler(renderResults)
+        .withFailureHandler(showError)
+        .searchSeiban(criteria);
+    }
+
+    function resetButton_() {
+      const btn = document.getElementById('searchBtn');
+      btn.disabled = false;
+      btn.textContent = '検索';
+    }
+
+    function statusClass_(status) {
+      if (status === '進行中') return 'ongoing';
+      if (status === '未登録') return 'unregistered';
+      return 'done'; // 完了・中断・完了/中断 はまとめてグレー系
+    }
+
+    function renderResults(data) {
+      resetButton_();
+      const summary = document.getElementById('summary');
+      const results = document.getElementById('results');
+      summary.style.color = '';
+      results.innerHTML = '';
+
+      if (!data || data.total === 0) {
+        summary.textContent = '該当する案件が見つかりませんでした。';
+        return;
+      }
+
+      if (data.total > data.shown) {
+        summary.textContent =
+          data.total + '件見つかりました。\n' +
+          '登録日の新しい順に' + data.shown + '件を表示しています。\n' +
+          'ブランドや企画名を追加すると、さらに絞り込めます。';
+      } else {
+        summary.textContent = '検索結果 ' + data.total + '件';
+      }
+
+      data.results.forEach(function (r) {
+        const row = document.createElement('div');
+        row.className = 'result-row';
+
+        const top = document.createElement('div');
+        top.className = 'r-top';
+
+        const left = document.createElement('div');
+        left.className = 'r-left';
+
+        const seibanSpan = document.createElement('span');
+        seibanSpan.className = 'seiban';
+        seibanSpan.textContent = r.seiban;
+        seibanSpan.title = 'クリックでコピー';
+        seibanSpan.onclick = function () { copyToClipboard(r.seiban, seibanSpan); };
+
+        const copyIcon = document.createElement('span');
+        copyIcon.className = 'copy-icon';
+        copyIcon.textContent = '📋';
+        copyIcon.title = 'コピー';
+        copyIcon.onclick = function () { copyToClipboard(r.seiban, seibanSpan); };
+
+        left.appendChild(seibanSpan);
+        left.appendChild(copyIcon);
+
+        const badge = document.createElement('span');
+        badge.className = 'status-badge status-' + statusClass_(r.status);
+        badge.textContent = r.status;
+
+        top.appendChild(left);
+        top.appendChild(badge);
+
+        const mid = document.createElement('div');
+        mid.className = 'r-mid';
+        mid.textContent = (r.planName || '（企画名未登録）') + '｜' + (r.product || '（製品名未登録）');
+
+        const bottom = document.createElement('div');
+        bottom.className = 'r-bottom';
+        const tags = [r.brand, r.season, r.category].filter(Boolean).join('・');
+        bottom.textContent = tags + '　登録日 ' + (r.registeredDate || '-');
+
+        row.appendChild(top);
+        row.appendChild(mid);
+        row.appendChild(bottom);
+        results.appendChild(row);
+      });
+    }
+
+    function showError(error) {
+      resetButton_();
+      const summary = document.getElementById('summary');
+      summary.style.color = '#c5221f';
+      summary.textContent = '検索中にエラーが発生しました。もう一度お試しください。';
+      document.getElementById('results').innerHTML = '';
+    }
+
+    function copyToClipboard(text, el) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        const original = el.textContent;
+        el.textContent = '✓ コピーしました';
+        el.classList.add('copied');
+        setTimeout(function () {
+          el.textContent = original;
+          el.classList.remove('copied');
+        }, 1200);
+      } catch (e) {
+        // コピー失敗時は静かに無視（表示は変えない）
+      } finally {
+        document.body.removeChild(ta);
+      }
+    }
+  </script>
+</body>
+</html>

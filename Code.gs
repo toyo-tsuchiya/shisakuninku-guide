@@ -1,4 +1,3 @@
-// ============================================================
 // 試作課 日報アプリ（分入力・出退勤連携版）
 // ============================================================
 
@@ -126,15 +125,15 @@ function setup() {
   s = getOrCreate(ss, SHEETS.LOGS);
   if (s.getLastRow() === 0) {
     s.appendRow([
-      'ID', '日付', '職人名',
+      'ID', '製番', '日付', '職人名',
       '出勤時刻', '退勤時刻', '休憩(分)', '実働(分)',
       '種別', '製品名', 'フェーズ大分類', '作業種別',
       '作業時間(分)', '人工数', '労務費(円)',
       'メモ', '提出日時', '企画名', 'フェーズ中分類', '製品or販促'
     ]);
-    header(s, 19);
-    [2,3,8,9,13].forEach(c => s.setColumnWidth(c, 120));
-    s.setColumnWidth(8, 220);
+    header(s, 20);
+    [3,4,9,10,14].forEach(c => s.setColumnWidth(c, 120));
+    s.setColumnWidth(9, 220);
   } else if (s.getLastColumn() < 19) {
     s.getRange(1, 19).setValue('製品or販促');
     if (s.getLastColumn() < 18) {
@@ -142,6 +141,21 @@ function setup() {
     }
     if (s.getRange(1, 10).getValue() === 'フェーズ') {
       s.getRange(1, 10).setValue('フェーズ大分類');
+    }
+  }
+  // 製番列: 無ければ末尾に追加し、B列（ID列の右）に無ければ移動する
+  // （2026-08-05: 末尾追加からB列表示への変更。WeeklyReport.gs側のL定数と対で更新すること）
+  {
+    const lastCol = s.getLastColumn();
+    const headers = s.getRange(1, 1, 1, Math.max(lastCol, 1)).getValues()[0];
+    let seibanCol = headers.indexOf('製番') + 1;
+    if (seibanCol === 0) {
+      s.getRange(1, lastCol + 1).setValue('製番');
+      seibanCol = lastCol + 1;
+    }
+    if (seibanCol !== 2) {
+      s.moveColumns(s.getRange(1, seibanCol, s.getMaxRows()), 2);
+      Logger.log('日報ログ: 製番列をB列に移動しました（元は' + seibanCol + '列目）');
     }
   }
 
@@ -215,6 +229,111 @@ function fixLogHeaders() {
   Logger.log('ヘッダーを修正しました');
 }
 
+// ================================================================
+// 日報ログの列ズレ調査・修復（2026-08-05）
+// 原因：B列に製番列を挿入した後、Webアプリが再デプロイされておらず、
+// 旧デプロイ（B列追加前・19列）のsubmitReport()が新しい20列のシートに
+// そのまま書き込み続けたため、B〜S列の値が実際より1列左にズレて保存された
+// （T列＝製品or販促が空欄のまま残る）。
+// 「C列（日付のはず）が日付に見えないのにB列は日付っぽい」行をズレ行とみなす。
+// ================================================================
+
+// 診断のみ（書き込みなし）。ズレていそうな行番号を一覧表示する
+function debugFindShiftedLogRows() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const s  = ss.getSheetByName(SHEETS.LOGS);
+  const lastRow = s.getLastRow();
+  if (lastRow < 2) { Logger.log('データがありません'); return; }
+
+  const vals = s.getRange(2, 1, lastRow - 1, 3).getValues();  // A:ID B:製番 C:日付
+  const looksDate = v => v instanceof Date || /^\d{4}[-\/]\d{1,2}[-\/]\d{1,2}$/.test(String(v).trim());
+
+  const shifted = [];
+  vals.forEach((r, i) => {
+    if (looksDate(r[1]) && !looksDate(r[2])) shifted.push(i + 2);
+  });
+
+  Logger.log('=== 列ズレ疑いの行: ' + shifted.length + '件 ===');
+  Logger.log(shifted.join('、') || 'なし');
+  if (shifted.length > 0) {
+    const sample = shifted.slice(0, 3);
+    sample.forEach(row => {
+      const r = s.getRange(row, 1, 1, 19).getValues()[0];
+      Logger.log('行' + row + ' の中身（A〜S列）: ' + JSON.stringify(r));
+    });
+  }
+}
+
+// debugFindShiftedLogRows() で確認した行を修復する。
+// B〜S列（18セル）の値をそのままC〜T列へ1列右にずらし、B列（製番）は
+// 製品名から引き直して補完する（'その他'種別の行はB列を空欄のまま）
+function fixShiftedLogRows() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const s  = ss.getSheetByName(SHEETS.LOGS);
+  const lastRow = s.getLastRow();
+  if (lastRow < 2) { Logger.log('データがありません'); return; }
+
+  const vals = s.getRange(2, 1, lastRow - 1, 3).getValues();
+  const looksDate = v => v instanceof Date || /^\d{4}[-\/]\d{1,2}[-\/]\d{1,2}$/.test(String(v).trim());
+  const shifted = [];
+  vals.forEach((r, i) => { if (looksDate(r[1]) && !looksDate(r[2])) shifted.push(i + 2); });
+
+  if (shifted.length === 0) { Logger.log('修復対象なし'); return; }
+
+  // 製品名 → 製番 のルックアップ（submitReportと同じ要領）
+  const schedSheet = ss.getSheetByName(SHEETS.SCHEDULES);
+  const productToSeiban = new Map();
+  if (schedSheet && schedSheet.getLastRow() > 1) {
+    const seibanCol = getSeibanColumn_(schedSheet);
+    if (seibanCol) {
+      schedSheet.getRange(2, 1, schedSheet.getLastRow() - 1, seibanCol).getValues()
+        .forEach(r => { if (r[1]) productToSeiban.set(r[1], r[seibanCol - 1] || ''); });
+    }
+  }
+
+  shifted.forEach(row => {
+    const bToS = s.getRange(row, 2, 1, 18).getValues()[0];  // 現在のB〜S列
+    s.getRange(row, 3, 1, 18).setValues([bToS]);            // C〜T列へ1列右にずらす
+
+    // 修復後のI列（種別）・J列（製品名）を見て製番を引き直す
+    const type    = s.getRange(row, 9).getValue();
+    const product = s.getRange(row, 10).getValue();
+    const seiban  = (type === 'サンプル製造') ? (productToSeiban.get(product) || '') : '';
+    s.getRange(row, 2).setValue(seiban);
+  });
+
+  Logger.log('修復完了: ' + shifted.length + '行（' + shifted.join('、') + '）');
+}
+
+// fixShiftedLogRows() で列をずらした際、休憩(分)の値が「時刻」表示形式のセルに
+// 起因してDate型のまま読み書きされ、数値ではなく日付っぽい表示になってしまう
+// ことがある（中身は壊れていないが表示がおかしい）。出勤時刻・退勤時刻・実働(分)
+// から休憩(分)を計算し直し、プレーンな数値として書き込み直す（2026-08-05）
+function fixBreakColumnFormat() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const s  = ss.getSheetByName(SHEETS.LOGS);
+  const lastRow = s.getLastRow();
+  if (lastRow < 2) { Logger.log('データがありません'); return; }
+
+  const vals = s.getRange(2, 5, lastRow - 1, 4).getValues();  // E:出勤時刻 F:退勤時刻 G:休憩(分) H:実働(分)
+  let fixed = 0;
+  vals.forEach((r, i) => {
+    const breakVal = r[2];
+    if (!(breakVal instanceof Date)) return;  // 休憩(分)が日時型になっている行だけが対象
+    const clockIn  = r[0];
+    const clockOut = r[1];
+    if (!(clockIn instanceof Date) || !(clockOut instanceof Date)) return;
+    const row = i + 2;
+    const spanMin   = Math.round((clockOut.getTime() - clockIn.getTime()) / 60000);
+    const actualMin = Number(r[3]) || 0;
+    const breakMin  = Math.max(0, spanMin - actualMin);
+    s.getRange(row, 7).setNumberFormat('0').setValue(breakMin);
+    fixed++;
+    Logger.log('行' + row + ': 休憩(分)を' + breakMin + 'に修正');
+  });
+  Logger.log('休憩(分)フォーマット修復完了: ' + fixed + '行');
+}
+
 // ----------------------------------------------------------
 // 初期データ取得
 // ----------------------------------------------------------
@@ -257,6 +376,17 @@ function getSchedules(ss) {
     .filter(r => r[1]).map(r => ({
       id:r[0], name:r[1], category:hasCategory ? (r[2]||'') : '', season:hasCategory ? (r[3]||'') : (r[2]||''), brand:hasCategory ? (r[4]||'') : (r[3]||''), plan:hasCategory ? (r[5]||'') : (r[4]||'')
     }));
+}
+
+// スケジュール（製品マスタ）シートの「製番」列番号を返す（無ければnull）。
+// 製番列はWeeklyReport.gs側（別Apps Scriptプロジェクト）が動的に追加するため、
+// 列位置を固定せずヘッダー名で毎回探す（2026-08-05: ④日報側での製番記録のために追加）
+function getSeibanColumn_(s) {
+  const lastCol = s.getLastColumn();
+  if (lastCol < 1) return null;
+  const headers = s.getRange(1, 1, 1, lastCol).getValues()[0];
+  const idx = headers.indexOf('製番');
+  return idx === -1 ? null : idx + 1;
 }
 
 function getStages(ss) {
@@ -302,13 +432,16 @@ function submitReport(craftsmanName, dateStr, clockIn, clockOut, breakMin, rows,
   const sheet = ss.getSheetByName(SHEETS.LOGS);
   const submittedAt = fmt(new Date(), 'yyyy/MM/dd HH:mm:ss');
 
-  // 製品名 → 企画名・製品or販促 のルックアップ（スケジュールマスターから）
+  // 製品名 → 企画名・製品or販促・製番 のルックアップ（スケジュールマスターから）
+  // 製番列はWeeklyReport.gs側（別Apps Scriptプロジェクト）が動的に追加するため列位置は固定しない
   const schedSheet = ss.getSheetByName(SHEETS.SCHEDULES);
   const productToPlan = new Map();
   const productToCategory = new Map();
+  const productToSeiban = new Map();
   if (schedSheet && schedSheet.getLastRow() > 1) {
     const hasCategory = schedSheet.getLastColumn() >= 6;
-    const cols = hasCategory ? 6 : 5;
+    const seibanCol = getSeibanColumn_(schedSheet);
+    const cols = Math.max(hasCategory ? 6 : 5, seibanCol || 0);
     schedSheet.getRange(2, 1, schedSheet.getLastRow()-1, cols).getValues()
       .forEach(r => {
         if (r[1]) {
@@ -318,6 +451,7 @@ function submitReport(craftsmanName, dateStr, clockIn, clockOut, breakMin, rows,
           } else {
             productToPlan.set(r[1], r[4]||'');
           }
+          if (seibanCol) productToSeiban.set(r[1], r[seibanCol-1] || '');
         }
       });
   }
@@ -329,8 +463,10 @@ function submitReport(craftsmanName, dateStr, clockIn, clockOut, breakMin, rows,
     const isSample = (row.type !== 'other');
     const planName = isSample ? (productToPlan.get(row.productName) || '') : '';
     const category = isSample ? (productToCategory.get(row.productName) || '') : '';
+    const seiban   = isSample ? (productToSeiban.get(row.productName) || '') : '';
     sheet.appendRow([
       Utilities.getUuid(),
+      seiban,
       dateStr, craftsmanName,
       clockIn||'', clockOut||'', Number(breakMin)||0, actualMin,
       isSample ? 'サンプル製造' : 'その他',

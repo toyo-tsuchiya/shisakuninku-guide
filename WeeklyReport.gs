@@ -18,19 +18,21 @@ const JP_HOLIDAY_CALENDAR_ID = 'ja.japanese#holiday@group.v.calendar.google.com'
 const HOLIDAY_SHEET_NAME     = '休日';  // 日報集計SS内。年末年始など会社独自の休業日をA列に並べる
 
 // 日報ログの列インデックス（0始まり）
+// 2026-08-05: B列に「製番」列を新設（Code.gs側で自動移動）→旧B〜S列が1列分右へ
 const L = {
-  date:      1,  // B: 日付
-  worker:    2,  // C: 職人名
-  actualMin: 6,  // G: 実働(分)
-  type:      7,  // H: 種別
-  product:   8,  // I: 製品名
-  phase:     9,  // J: フェーズ大分類
-  workType:  10, // K: 作業種別
-  workMin:   11, // L: 作業時間(分)
-  laborCost: 13, // N: 労務費(円)
-  planName:  16, // Q: 企画名
-  subcat:    17, // R: フェーズ中分類
-  category:  18, // S: 製品or販促
+  seiban:    1,  // B: 製番
+  date:      2,  // C: 日付
+  worker:    3,  // D: 職人名
+  actualMin: 7,  // H: 実働(分)
+  type:      8,  // I: 種別
+  product:   9,  // J: 製品名
+  phase:     10, // K: フェーズ大分類
+  workType:  11, // L: 作業種別
+  workMin:   12, // M: 作業時間(分)
+  laborCost: 14, // O: 労務費(円)
+  planName:  17, // R: 企画名
+  subcat:    18, // S: フェーズ中分類
+  category:  19, // T: 製品or販促
 };
 
 // フェーズ中分類マスター（Code.gsのSHEETS.STAGE_SUBCATSと同期）
@@ -90,7 +92,7 @@ const S = {
 // ================================================================
 function generateWeeklyReport() {
   const { startDate, endDate } = getWeekRange();
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       19);
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       20);
   const reportSS     = getOrCreateReportSS();
 
   appendToWeeklyTrend(reportSS, logRows, startDate, endDate);
@@ -178,7 +180,7 @@ function checkMissingReportsAndRemind(logRows, startDate, endDate) {
 // デバッグ：実際にはメールを送らず、誰にどの日が未入力として検知されるかだけログ出力する
 function debugMissingReports() {
   const { startDate, endDate } = getWeekRange();
-  const logRows = getSheetData(REPORT_CONFIG.logSSId, REPORT_CONFIG.logSheetName, 19);
+  const logRows = getSheetData(REPORT_CONFIG.logSSId, REPORT_CONFIG.logSheetName, 20);
   const appSS     = SpreadsheetApp.openById(REPORT_CONFIG.logSSId);
   const craftsmen = getCraftsmenForReminder_(appSS);
 
@@ -617,7 +619,7 @@ function generateMonthlyReportForMonth(year, month) {
   const endDate   = new Date(year, month,       0, 23, 59, 59, 999);
   const label     = year + '年' + String(month).padStart(2, '0') + '月';
 
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       19);
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       20);
   const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 15, 6);
   const reportSS     = getOrCreateReportSS();
 
@@ -1338,7 +1340,7 @@ const SUMMARY_BLUE_LIGHT = '#64B5F6';  // 上位20〜40%
 const SUMMARY_GRAY       = '#B0BEC5';  // その他
 
 function generateSummarySheet(year, month) {
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       19);
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       20);
   const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 15, 6);
   buildAllSummarySheets(logRows, scheduleRows, year, month);
 }
@@ -1736,7 +1738,7 @@ function generateWeeklyReportBackfill() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       18);
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       19);
   const reportSS     = getOrCreateReportSS();
 
   let current = new Date(startDate);
@@ -1805,7 +1807,7 @@ function run202605() { generateMonthlyReportForMonth(2026, 5); }
 
 // ⑧製品×職人別を単月だけ試し生成するラッパー
 function runProductWorker202605() {
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       19);
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       20);
   const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 15, 6);
   const reportSS     = getOrCreateReportSS();
   const startDate    = new Date(2026, 4,  1,  0,  0,  0,   0);
@@ -1900,7 +1902,7 @@ function refreshWeeklyReport(startDate, endDate) {
     Logger.log(name + ': ' + sk + '〜' + ek + ' の行を' + rowsToDelete.length + '件削除');
   });
 
-  const logRows = getSheetData(REPORT_CONFIG.logSSId, REPORT_CONFIG.logSheetName, 19);
+  const logRows = getSheetData(REPORT_CONFIG.logSSId, REPORT_CONFIG.logSheetName, 20);
   appendToWeeklyTrend(reportSS, logRows, startDate, endDate);
   appendToWorkerWeekly(reportSS, logRows, startDate, endDate);
   Logger.log(sk + '〜' + ek + ' 週次再集計完了（本日までのデータを反映）');
@@ -1940,7 +1942,7 @@ function menuDebugProductCountMismatch(){ debugProductCountMismatch();Spreadshee
 function menuDebugMissingReports()      { debugMissingReports();      SpreadsheetApp.getUi().alert('リマインド対象を実行ログに出力しました（メールは送信されません）。'); }
 
 function runProductWorker202606() {
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       19);
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       20);
   const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 15, 6);
   const reportSS     = getOrCreateReportSS();
   const startDate    = new Date(2026, 5,  1,  0,  0,  0,   0);
@@ -2690,7 +2692,7 @@ function debugWeeklyReport() {
   const { startDate, endDate } = getWeekRange();
   Logger.log('=== 集計期間: ' + dFmt(startDate) + ' 〜 ' + dFmt(endDate) + ' ===');
 
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       18);
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       19);
   const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 15, 6);
 
   const sampleLogs = logRows.filter(r => r[L.type] === 'サンプル製造');
@@ -2718,7 +2720,7 @@ function debugWeeklyReport() {
 // 未突合の原因調査
 // ================================================================
 function debugUnmatched() {
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,      18);
+  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,      19);
   const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 15, 6);
 
   const scheduleProducts  = [...new Set(scheduleRows.map(r => r[S.product]).filter(Boolean))].sort();

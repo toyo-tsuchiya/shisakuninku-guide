@@ -372,9 +372,14 @@ function getSchedules(ss) {
   if (!s || s.getLastRow() <= 1) return [];
   const hasCategory = s.getLastColumn() >= 6;
   const cols = hasCategory ? 6 : 5;
-  return s.getRange(2, 1, s.getLastRow()-1, cols).getValues()
+  // 製番列はWeeklyReport.gs側（別Apps Scriptプロジェクト）が動的に追加するため列位置は固定しない
+  // （2026-08-06: 検索候補への表示用にクライアントへ渡すため追加）
+  const seibanCol = getSeibanColumn_(s);
+  const readCols = Math.max(cols, seibanCol || 0);
+  return s.getRange(2, 1, s.getLastRow()-1, readCols).getValues()
     .filter(r => r[1]).map(r => ({
-      id:r[0], name:r[1], category:hasCategory ? (r[2]||'') : '', season:hasCategory ? (r[3]||'') : (r[2]||''), brand:hasCategory ? (r[4]||'') : (r[3]||''), plan:hasCategory ? (r[5]||'') : (r[4]||'')
+      id:r[0], name:r[1], category:hasCategory ? (r[2]||'') : '', season:hasCategory ? (r[3]||'') : (r[2]||''), brand:hasCategory ? (r[4]||'') : (r[3]||''), plan:hasCategory ? (r[5]||'') : (r[4]||''),
+      seiban: seibanCol ? (r[seibanCol-1] || '') : ''
     }));
 }
 
@@ -421,6 +426,17 @@ function submitReport(craftsmanName, dateStr, clockIn, clockOut, breakMin, rows,
   if (!dateStr)       return { success:false, message:'日付を入力してください。' };
   if (!rows || rows.length === 0) return { success:false, message:'作業行を1件以上入力してください。' };
 
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // フェーズ大分類の「中分類あり」がtrueの行は、フェーズ中分類が未入力だと保存不可
+  // （2026-08-06: 中分類の入力運用の必須化。書き込みの前に全行を検証し、一部だけ保存される事故を防ぐ）
+  const stageHasSubMap = new Map(getStages(ss).map(s => [s.name, s.hasSub]));
+  for (const row of rows) {
+    if (row.type !== 'other' && stageHasSubMap.get(row.stageName) && !row.stageSubcat) {
+      return { success:false, message:'フェーズ中分類を選択してください。' };
+    }
+  }
+
   const actualMin  = calcActualMinutes(clockIn, clockOut, Number(breakMin)||0);
   const totalInput = rows.reduce((s,r) => s + (Number(r.minutes)||0), 0);
 
@@ -428,7 +444,6 @@ function submitReport(craftsmanName, dateStr, clockIn, clockOut, breakMin, rows,
     ? `※ 入力合計 ${totalInput}分 ／ 実働 ${actualMin}分（差: ${totalInput - actualMin}分）`
     : null;
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(SHEETS.LOGS);
   const submittedAt = fmt(new Date(), 'yyyy/MM/dd HH:mm:ss');
 

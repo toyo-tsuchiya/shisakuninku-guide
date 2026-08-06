@@ -195,6 +195,20 @@ tr:active td{background:#f5fbfb}
 
 /* 製品情報バッジ（モーダル自動表示） */
 .prod-info{display:none;flex-wrap:wrap;gap:6px;margin-top:10px;padding:10px 12px;background:#f5fbfb;border:1.5px solid #d6eef0;border-radius:10px}
+
+/* サンプル製品名称 検索コンボボックス */
+.combo-wrap{position:relative}
+.combo-list{position:absolute;top:calc(100% + 6px);left:0;right:0;background:#fff;border:2px solid #d6eef0;border-radius:12px;box-shadow:0 6px 18px rgba(20,50,55,.10);max-height:320px;overflow-y:auto;z-index:500}
+.combo-item{padding:12px 14px;border-bottom:1px solid #d6eef0;cursor:pointer;transition:background .12s}
+.combo-item:last-child{border-bottom:none}
+.combo-item:hover{background:#f5fbfb}
+.combo-item.is-selected{background:#e0f7f8;border-left:3px solid #0BBDC4;padding-left:11px}
+.combo-line1{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;line-height:1.4}
+.combo-name{font-size:16px;font-weight:700;color:#1a202c}
+.combo-sep{font-size:13px;color:#b8c6cc;font-weight:400}
+.combo-seiban{font-size:14px;font-weight:600;color:#6b7a8d}
+.combo-line2{margin-top:3px;font-size:13px;color:#7a8a99;line-height:1.5;font-weight:500}
+.combo-empty{text-align:center;padding:34px 16px;color:#6b7a8d;font-size:15px}
 .prod-info.show{display:flex}
 .prod-info-plan{font-size:14px;font-weight:700;color:#4a5568;width:100%;margin-top:4px}
 
@@ -491,7 +505,16 @@ tr:active td{background:#f5fbfb}
     <div id="modal-sample-fields">
       <div class="modal-field">
         <label>サンプル製品名称</label>
-        <select id="m-prod" onchange="onProdChange()"><option value="">-- 選択 --</option></select>
+        <div class="combo-wrap">
+          <input type="hidden" id="m-prod">
+          <input type="text" id="m-prod-search" class="combo-input" autocomplete="off"
+                 placeholder="-- 選択 --"
+                 oninput="onProdSearchInput()"
+                 onfocus="this.select();openProductList()"
+                 onkeydown="onProdSearchKeydown(event)"
+                 onblur="onProdSearchBlur()">
+          <div class="combo-list" id="m-prod-list" style="display:none"></div>
+        </div>
         <div class="prod-info" id="prod-info">
           <span class="badge b-bl" id="pi-season"></span>
           <span class="badge b-gy" id="pi-brand"></span>
@@ -503,8 +526,8 @@ tr:active td{background:#f5fbfb}
         <select id="m-stage" onchange="onStageChange()"><option value="">-- 選択 --</option></select>
       </div>
       <div class="modal-field" id="m-subcat-field" style="display:none">
-        <label>フェーズ 中分類（任意）</label>
-        <select id="m-subcat"><option value="">-- 選択しない --</option></select>
+        <label>フェーズ 中分類</label>
+        <select id="m-subcat"><option value="">-- 選択 --</option></select>
       </div>
     </div>
     <div id="modal-other-fields" style="display:none">
@@ -512,6 +535,10 @@ tr:active td{background:#f5fbfb}
         <label>作業種別</label>
         <select id="m-worktype"><option value="">-- 選択 --</option></select>
       </div>
+    </div>
+    <div class="modal-field">
+      <label>作業時間（分）</label>
+      <input type="number" id="m-minutes" min="5" step="5">
     </div>
     <div class="modal-field">
       <label>メモ（任意）</label>
@@ -558,6 +585,8 @@ let dragState       = null;
 let reorderState    = null;
 let recentlyDragged = false;
 let snapMin         = 5;
+let currentProdCandidates = [];
+let prodActiveIndex       = -1;
 
 /* ======================== */
 /* 初期化                   */
@@ -1068,7 +1097,7 @@ function onStageChange() {
   const stage = S.stages.find(s => s.name === name);
   const field = document.getElementById('m-subcat-field');
   if (stage && stage.hasSub && S.subcats.length) {
-    fill('m-subcat', S.subcats.map(s => s.name), '-- 選択しない --');
+    fill('m-subcat', S.subcats.map(s => s.name), '-- 選択 --');
     field.style.display = '';
   } else {
     field.style.display = 'none';
@@ -1097,12 +1126,127 @@ function onProdChange() {
   }
 }
 
+/* ======================== */
+/* サンプル製品名称 検索コンボボックス */
+/* ======================== */
+function filterProducts(query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return S.schedules.slice();
+  const scored = [];
+  S.schedules.forEach(s => {
+    const name   = (s.name   || '').toLowerCase();
+    const seiban = (s.seiban || '').toLowerCase();
+    const plan   = (s.plan   || '').toLowerCase();
+    const brand  = (s.brand  || '').toLowerCase();
+    const season = (s.season || '').toLowerCase();
+    let rank = -1;
+    if      (name === q)          rank = 0;
+    else if (name.startsWith(q))  rank = 1;
+    else if (name.includes(q))    rank = 2;
+    else if (seiban.includes(q))  rank = 3;
+    else if (plan.includes(q))    rank = 4;
+    else if (brand.includes(q))   rank = 5;
+    else if (season.includes(q))  rank = 6;
+    if (rank >= 0) scored.push({ s, rank });
+  });
+  scored.sort((a, b) => a.rank - b.rank); // Array#sortは安定ソートのため同順位は元の並び順を維持
+  return scored.map(x => x.s);
+}
+
+function renderProductList(list) {
+  const el = document.getElementById('m-prod-list');
+  if (!list.length) {
+    el.innerHTML = '<div class="combo-empty">該当する案件が見つかりませんでした</div>';
+    return;
+  }
+  el.innerHTML = list.map(s => `
+    <div class="combo-item" data-name="${esc(s.name)}" onmousedown="event.preventDefault();selectProduct(this.dataset.name)">
+      <div class="combo-line1">
+        <span class="combo-name">${esc(s.name)}</span>
+        <span class="combo-sep">｜</span>
+        <span class="combo-seiban">${esc(s.seiban || '製番未登録')}</span>
+      </div>
+      <div class="combo-line2">${[s.season, s.brand, s.plan].filter(Boolean).map(esc).join(' <span class="combo-sep">｜</span> ')}</div>
+    </div>
+  `).join('');
+}
+
+function updateProductList() {
+  const query = document.getElementById('m-prod-search').value;
+  currentProdCandidates = filterProducts(query);
+  prodActiveIndex = -1;
+  renderProductList(currentProdCandidates);
+  document.getElementById('m-prod-list').style.display = '';
+}
+
+// クリック／タップでフォーカスした直後は、入力中の文字に関わらず全件表示する
+function openProductList() {
+  currentProdCandidates = S.schedules.slice();
+  prodActiveIndex = -1;
+  renderProductList(currentProdCandidates);
+  document.getElementById('m-prod-list').style.display = '';
+}
+
+function onProdSearchInput() { updateProductList(); }
+
+function closeProductList() {
+  document.getElementById('m-prod-list').style.display = 'none';
+}
+
+function onProdSearchBlur() {
+  closeProductList();
+  // 候補から選ばなかった入力文字は破棄し、直近に確定した値へ戻す（自由入力を許可しない）
+  document.getElementById('m-prod-search').value = document.getElementById('m-prod').value;
+}
+
+function selectProduct(name) {
+  document.getElementById('m-prod').value = name;
+  document.getElementById('m-prod-search').value = name;
+  closeProductList();
+  onProdChange();
+}
+
+function resetProductSearch(name) {
+  document.getElementById('m-prod').value = name || '';
+  document.getElementById('m-prod-search').value = name || '';
+  closeProductList();
+}
+
+function onProdSearchKeydown(e) {
+  const items = document.querySelectorAll('#m-prod-list .combo-item');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (!items.length) return;
+    prodActiveIndex = Math.min(prodActiveIndex + 1, items.length - 1);
+    highlightProdItem(items);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (!items.length) return;
+    prodActiveIndex = Math.max(prodActiveIndex - 1, 0);
+    highlightProdItem(items);
+  } else if (e.key === 'Enter') {
+    if (prodActiveIndex >= 0 && currentProdCandidates[prodActiveIndex]) {
+      e.preventDefault();
+      selectProduct(currentProdCandidates[prodActiveIndex].name);
+    }
+  } else if (e.key === 'Escape') {
+    closeProductList();
+    e.target.blur();
+  }
+}
+
+function highlightProdItem(items) {
+  items.forEach((el, i) => el.classList.toggle('is-selected', i === prodActiveIndex));
+  const active = items[prodActiveIndex];
+  if (active) active.scrollIntoView({ block: 'nearest' });
+}
+
 function openAddModal() {
   editingId = null;
   setModalType('sample');
   document.getElementById('modal-title').textContent    = '作業を追加';
   document.getElementById('modal-dot').style.background = COLORS[colorIdx % COLORS.length];
-  document.getElementById('m-prod').value     = '';
+  resetProductSearch('');
   document.getElementById('m-stage').value    = '';
   document.getElementById('m-worktype').value = '';
   document.getElementById('m-memo').value     = '';
@@ -1111,6 +1255,7 @@ function openAddModal() {
   document.getElementById('prod-info').classList.remove('show');
   document.getElementById('m-subcat-field').style.display = 'none';
   document.getElementById('m-subcat').value = '';
+  document.getElementById('m-minutes').value = calcDefaultMinutes();
   document.getElementById('modal-bg').classList.add('show');
 }
 
@@ -1121,7 +1266,7 @@ function openEditModal(id) {
   setModalType(row.type || 'sample');
   document.getElementById('modal-title').textContent    = '作業を編集';
   document.getElementById('modal-dot').style.background = row.color;
-  document.getElementById('m-prod').value     = row.productName  || '';
+  resetProductSearch(row.productName || '');
   document.getElementById('m-stage').value    = row.stageName    || '';
   document.getElementById('m-worktype').value = row.workType     || '';
   document.getElementById('m-memo').value     = row.memo         || '';
@@ -1130,19 +1275,31 @@ function openEditModal(id) {
   if (row.type !== 'other') onProdChange();
   onStageChange();
   document.getElementById('m-subcat').value = row.stageSubcat || '';
+  document.getElementById('m-minutes').value = row.minutes;
   document.getElementById('modal-bg').classList.add('show');
 }
 
 function closeModal() { document.getElementById('modal-bg').classList.remove('show'); }
 function bgClose(e)   { if (e.target === document.getElementById('modal-bg')) closeModal(); }
 
-function saveBlock() {
-  const memo   = document.getElementById('m-memo').value.trim();
+function calcDefaultMinutes() {
   const totalMin = getJikan();
   const usedMin  = tlRows.reduce((s, r) => s + r.minutes, 0);
   const remain   = Math.max(5, totalMin - usedMin);
-  const defMin   = Math.min(remain, Math.max(5, Math.round(remain / 2 / 5) * 5));
-  const color    = COLORS[colorIdx % COLORS.length];
+  return Math.min(remain, Math.max(5, Math.round(remain / 2 / 5) * 5));
+}
+
+function validateMinutesInput(val) {
+  const n = Number(val);
+  if (val === '' || val === null || isNaN(n) || !Number.isInteger(n) || n < 5) return null;
+  return n;
+}
+
+function saveBlock() {
+  const memo    = document.getElementById('m-memo').value.trim();
+  const minutes = validateMinutesInput(document.getElementById('m-minutes').value);
+  if (minutes === null) { toast('作業時間（分）は5分以上の整数で入力してください', 'err'); return; }
+  const color   = COLORS[colorIdx % COLORS.length];
 
   if (currentModalType === 'sample') {
     const prod   = document.getElementById('m-prod').value.trim();
@@ -1150,13 +1307,15 @@ function saveBlock() {
     const subcat = document.getElementById('m-subcat').value;
     if (!prod)  { toast('製品名を選択してください', 'err'); return; }
     if (!stage) { toast('フェーズ大分類を選択してください', 'err'); return; }
+    const stageHasSub = S.stages.find(s => s.name === stage)?.hasSub;
+    if (stageHasSub && !subcat) { toast('フェーズ中分類を選択してください', 'err'); return; }
     if (editingId === null) {
       colorIdx++;
-      tlRows.push({ id:nextId++, type:'sample', productName:prod, stageName:stage, stageSubcat:subcat, workType:'', minutes:defMin, color, memo });
-      toast(`追加しました（${defMin}分）`, 'ok');
+      tlRows.push({ id:nextId++, type:'sample', productName:prod, stageName:stage, stageSubcat:subcat, workType:'', minutes, color, memo });
+      toast(`追加しました（${minutes}分）`, 'ok');
     } else {
       const row = tlRows.find(r => r.id === editingId);
-      if (row) Object.assign(row, { type:'sample', productName:prod, stageName:stage, stageSubcat:subcat, workType:'', memo });
+      if (row) Object.assign(row, { type:'sample', productName:prod, stageName:stage, stageSubcat:subcat, workType:'', minutes, memo });
       toast('更新しました', 'ok');
     }
   } else {
@@ -1164,11 +1323,11 @@ function saveBlock() {
     if (!workType) { toast('作業種別を選択してください', 'err'); return; }
     if (editingId === null) {
       colorIdx++;
-      tlRows.push({ id:nextId++, type:'other', productName:'', stageName:'', workType, minutes:defMin, color, memo });
-      toast(`追加しました（${defMin}分）`, 'ok');
+      tlRows.push({ id:nextId++, type:'other', productName:'', stageName:'', workType, minutes, color, memo });
+      toast(`追加しました（${minutes}分）`, 'ok');
     } else {
       const row = tlRows.find(r => r.id === editingId);
-      if (row) Object.assign(row, { type:'other', productName:'', stageName:'', workType, memo });
+      if (row) Object.assign(row, { type:'other', productName:'', stageName:'', workType, minutes, memo });
       toast('更新しました', 'ok');
     }
   }
@@ -1525,7 +1684,6 @@ function mTable(headers, rows) {
 /* ======================== */
 function fillAll() {
   fill('r-who',      S.craftsmen.map(c=>c.name),  '-- 選択 --');
-  fill('m-prod',     S.schedules.map(s=>s.name),  '-- 選択 --');
   fill('m-stage',    S.stages.map(s=>s.name),     '-- 選択 --');
   fill('m-worktype', S.workTypes.map(w=>w.name),  '-- 選択 --');
 }

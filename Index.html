@@ -375,36 +375,10 @@ tr:active td{background:#f5fbfb}
 <div id="tab-settings" class="pn">
 
   <div class="card">
-    <div class="card-ttl acc-ttl" onclick="toggleAcc(this)">👜 製品管理</div>
+    <div class="card-ttl acc-ttl" onclick="toggleAcc(this)">👜 製品一覧（読み取り専用）</div>
     <div class="acc-body">
-      <p class="setting-note">⚠ 製品名を入力する際は、集計時に参照できるよう正式名称またはスケジュール表と完全一致させてください。</p>
-      <div class="row">
-        <div class="fg"><label>シーズン・型振・VMD</label>
-          <input type="text" id="p-season" placeholder="例: 2027SS / VN型振り">
-        </div>
-        <div class="fg"><label>ブランド</label>
-          <input type="text" id="p-brand" placeholder="例: TSUCHIYA">
-        </div>
-        <div class="fg w2"><label>製品/販促</label>
-          <select id="p-category">
-            <option value="製品">製品</option>
-            <option value="販促">販促</option>
-          </select>
-        </div>
-        <div class="fg"><label>企画名</label>
-          <input type="text" id="p-plan" placeholder="例: 27SS 新メンズライン">
-        </div>
-      </div>
-      <div class="row" style="align-items:flex-end">
-        <div class="fg"><label>サンプル製品名称</label>
-          <input type="text" id="p-name" placeholder="例: バックパック 組み立て">
-          <input type="hidden" id="p-edit-orig">
-        </div>
-        <button class="btn btn-mono btn-sm" id="p-add-btn" onclick="addSchedule()">追加</button>
-        <button class="btn btn-p btn-sm" id="p-save-btn" style="display:none" onclick="saveScheduleEdit()">更新</button>
-        <button class="btn btn-g btn-sm" id="p-cancel-btn" style="display:none" onclick="cancelScheduleEdit()">キャンセル</button>
-      </div>
-      <div id="list-p" style="margin-top:32px" class="ld">読み込み中...</div>
+      <p class="setting-note">製品情報は採番表・外部スケジュール表から自動同期されるため、ここでの追加・修正・削除はできません。内容を直したい場合は採番表または外部スケジュール表を修正してください。</p>
+      <div id="list-p" class="ld">読み込み中...</div>
     </div>
   </div>
 
@@ -516,6 +490,7 @@ tr:active td{background:#f5fbfb}
           <div class="combo-list" id="m-prod-list" style="display:none"></div>
         </div>
         <div class="prod-info" id="prod-info">
+          <span class="badge b-pp" id="pi-seiban"></span>
           <span class="badge b-bl" id="pi-season"></span>
           <span class="badge b-gy" id="pi-brand"></span>
           <div class="prod-info-plan" id="pi-plan"></div>
@@ -1109,12 +1084,16 @@ function onProdChange() {
   const name = document.getElementById('m-prod').value;
   const sch  = S.schedules.find(s => s.name === name);
   const info = document.getElementById('prod-info');
-  if (sch && (sch.season || sch.brand || sch.plan)) {
+  if (sch && (sch.season || sch.brand || sch.plan || sch.seiban !== undefined)) {
     const setSI = (id, val) => {
       const el = document.getElementById(id);
       el.textContent = val || '';
       el.style.display = val ? '' : 'none';
     };
+    // 製番は同名候補との区別に使うため、未登録でもその旨を表示する（非表示にしない）
+    const seibanEl = document.getElementById('pi-seiban');
+    seibanEl.textContent = sch.seiban || '製番未登録';
+    seibanEl.style.display = '';
     setSI('pi-season', sch.season);
     setSI('pi-brand',  sch.brand);
     const planEl = document.getElementById('pi-plan');
@@ -1454,14 +1433,6 @@ function cancelCraftsmanEdit() {
   document.getElementById('c-cancel-btn').style.display = 'none';
 }
 
-function addSchedule() {
-  const name = document.getElementById('p-name').value.trim();
-  if (!name) { toast('製品名を入力してください','err'); return; }
-  google.script.run
-    .withSuccessHandler(r => { toast(r.message,r.success?'ok':'err'); if(r.success){document.getElementById('p-name').value=''; reload();} })
-    .addSchedule(name, v('p-category'), v('p-season'), v('p-brand'), v('p-plan'));
-}
-
 function addStage() {
   const name   = document.getElementById('st-name').value.trim();
   const hasSub = document.getElementById('st-hassub').checked;
@@ -1477,42 +1448,6 @@ function addSubcat() {
   google.script.run
     .withSuccessHandler(r => { toast(r.message,r.success?'ok':'err'); if(r.success){document.getElementById('sc-name').value=''; document.getElementById('sc-class').value='製作'; reload();} })
     .addStageSubcat(name, document.getElementById('sc-class').value);
-}
-
-function editSchedule(name) {
-  const sch = S.schedules.find(s => s.name === name);
-  if (!sch) return;
-  document.getElementById('p-category').value = sch.category === '販促' ? '販促' : '製品';
-  document.getElementById('p-name').value   = sch.name;
-  document.getElementById('p-season').value = sch.season || '';
-  document.getElementById('p-brand').value  = sch.brand  || '';
-  document.getElementById('p-plan').value   = sch.plan   || '';
-  document.getElementById('p-edit-orig').value = sch.name;
-  document.getElementById('p-add-btn').style.display    = 'none';
-  document.getElementById('p-save-btn').style.display   = '';
-  document.getElementById('p-cancel-btn').style.display = '';
-  document.getElementById('p-name').focus();
-}
-
-function saveScheduleEdit() {
-  const orig = document.getElementById('p-edit-orig').value;
-  const name = document.getElementById('p-name').value.trim();
-  if (!name) { toast('製品名を入力してください','err'); return; }
-  google.script.run
-    .withSuccessHandler(r => { toast(r.message,r.success?'ok':'err'); if(r.success){ cancelScheduleEdit(); reload(); } })
-    .updateSchedule(orig, name, v('p-category'), v('p-season'), v('p-brand'), v('p-plan'));
-}
-
-function cancelScheduleEdit() {
-  ['p-category','p-name','p-season','p-brand','p-plan'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el.tagName === 'SELECT') el.value = '製品';
-    else el.value = '';
-  });
-  document.getElementById('p-edit-orig').value = '';
-  document.getElementById('p-add-btn').style.display    = '';
-  document.getElementById('p-save-btn').style.display   = 'none';
-  document.getElementById('p-cancel-btn').style.display = 'none';
 }
 
 function editStage(name) {
@@ -1573,7 +1508,6 @@ function cancelSubcatEdit() {
 }
 
 function delCraftsman(name){ if(!confirm(`「${name}」を削除しますか？`))return; google.script.run.withSuccessHandler(r=>{toast(r.message,r.success?'ok':'err');if(r.success)reload();}).deleteCraftsman(name); }
-function delSchedule(name) { if(!confirm(`「${name}」を削除しますか？`))return; google.script.run.withSuccessHandler(r=>{toast(r.message,r.success?'ok':'err');if(r.success)reload();}).deleteSchedule(name); }
 function delStage(name)    { if(!confirm(`「${name}」を削除しますか？`))return; google.script.run.withSuccessHandler(r=>{toast(r.message,r.success?'ok':'err');if(r.success)reload();}).deleteStage(name); }
 function delSubcat(name)   { if(!confirm(`「${name}」を削除しますか？`))return; google.script.run.withSuccessHandler(r=>{toast(r.message,r.success?'ok':'err');if(r.success)reload();}).deleteStageSubcat(name); }
 
@@ -1632,10 +1566,9 @@ function renderLists() {
           s.brand  ? `<span title="${esc(s.brand)}">${esc(s.brand)}</span>`   : '—',
           `<span class="badge ${s.category==='販促'?'b-or':'b-bl'}">${s.category==='販促'?'販促':'製品'}</span>`,
           s.plan   ? `<span title="${esc(s.plan)}">${esc(s.plan)}</span>`     : '—',
-          `<strong title="${esc(s.name)}">${esc(s.name)}</strong>`,
-          `<button class="btn btn-mono btn-sm" onclick="editSchedule('${esc(s.name)}')">修正</button>
-           <button class="btn btn-d btn-sm" onclick="delSchedule('${esc(s.name)}')">削除</button>`
-        ])
+          `<strong title="${esc(s.name)}">${esc(s.name)}</strong>`
+        ]),
+        true
       )
     : '<div class="empty">未登録</div>';
 
@@ -1672,9 +1605,9 @@ function renderLists() {
     : '<div class="empty">未登録</div>';
 }
 
-function mTable(headers, rows) {
+function mTable(headers, rows, noActionCol) {
   return `<div class="tw"><table>
-    <thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}<th></th></tr></thead>
+    <thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}${noActionCol ? '' : '<th></th>'}</tr></thead>
     <tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>
   </table></div>`;
 }

@@ -497,41 +497,6 @@ function appendToWorkerWeekly(reportSS, logRows, startDate, endDate) {
 }
 
 // ================================================================
-// ② 職人別週次：既存データに週ごとの色分けを一括適用（1回のみ実行）
-// ================================================================
-function colorWorkerWeeklySheet() {
-  const sheet = getOrCreateReportSS().getSheetByName('②職人別週次');
-  if (!sheet || sheet.getLastRow() <= 1) return;
-
-  const lastRow = sheet.getLastRow();
-  const numCols = sheet.getLastColumn();
-  const vals = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-
-  let currentKey = null;
-  let weekIndex  = -1;
-  let groupStart = 2;
-
-  for (let i = 0; i < vals.length; i++) {
-    const key = String(vals[i][0]);
-    const row = i + 2;
-    if (key !== currentKey) {
-      if (currentKey !== null) {
-        const bg = weekIndex % 2 === 1 ? '#E3F2FD' : '#FFFFFF';
-        sheet.getRange(groupStart, 1, row - groupStart, numCols).setBackground(bg);
-      }
-      currentKey = key;
-      weekIndex++;
-      groupStart = row;
-    }
-  }
-  // 最後のグループ
-  const bg = weekIndex % 2 === 1 ? '#E3F2FD' : '#FFFFFF';
-  sheet.getRange(groupStart, 1, lastRow - groupStart + 1, numCols).setBackground(bg);
-
-  Logger.log('②職人別週次 色分け完了: ' + (weekIndex + 1) + '週分');
-}
-
-// ================================================================
 // 製造比率(%)セルに色付け（共通ヘルパー）
 // ================================================================
 function applyMfgRatioColor(cell, ratio) {
@@ -539,67 +504,6 @@ function applyMfgRatioColor(cell, ratio) {
   if      (r >= 70) cell.setFontColor('#2E7D32').setFontWeight('bold');
   else if (r >= 50) cell.setFontColor('#F57C00').setFontWeight('bold');
   else              cell.setFontColor('#C62828').setFontWeight('bold');
-}
-
-// ================================================================
-// 製造比率(%)色分けを全シートの既存データに一括適用（1回のみ実行）
-// 対象: ①週次推移(10列目)、②職人別週次(8列目)、③月別推移(7列目)、④職人別月次(7列目)
-// ================================================================
-function colorMfgRatioAllSheets() {
-  const ss = getOrCreateReportSS();
-  const targets = [
-    { name: '①週次推移',   col: 10 },
-    { name: '②職人別週次', col: 8  },
-    { name: '③月別推移',   col: 7  },
-    { name: '④職人別月次', col: 7  },
-  ];
-
-  targets.forEach(({ name, col }) => {
-    const sheet = ss.getSheetByName(name);
-    if (!sheet || sheet.getLastRow() <= 1) return;
-    const lastRow = sheet.getLastRow();
-    const vals = sheet.getRange(2, col, lastRow - 1, 1).getValues();
-    vals.forEach((r, i) => applyMfgRatioColor(sheet.getRange(i + 2, col), r[0]));
-    Logger.log(name + ' 製造比率 色分け完了: ' + (lastRow - 1) + '行');
-  });
-}
-
-// ================================================================
-// ④⑤⑥⑦ 月次シート：既存データに月ごとの色分けを一括適用（1回のみ実行）
-// ================================================================
-function colorMonthlySheet(sheetName, labelCol) {
-  const sheet = getOrCreateReportSS().getSheetByName(sheetName);
-  if (!sheet || sheet.getLastRow() <= 1) return;
-  const lastRow = sheet.getLastRow();
-  const numCols = sheet.getLastColumn();
-  const vals = sheet.getRange(2, labelCol, lastRow - 1, 1).getValues();
-  let currentKey = null;
-  let monthIndex = -1;
-  let groupStart = 2;
-  for (let i = 0; i < vals.length; i++) {
-    const key = String(vals[i][0]);
-    const row = i + 2;
-    if (key !== currentKey) {
-      if (currentKey !== null) {
-        const bg = monthIndex % 2 === 1 ? '#E3F2FD' : '#FFFFFF';
-        sheet.getRange(groupStart, 1, row - groupStart, numCols).setBackground(bg);
-      }
-      currentKey = key;
-      monthIndex++;
-      groupStart = row;
-    }
-  }
-  const bg = monthIndex % 2 === 1 ? '#E3F2FD' : '#FFFFFF';
-  sheet.getRange(groupStart, 1, lastRow - groupStart + 1, numCols).setBackground(bg);
-  Logger.log(sheetName + ' 月次色分け完了: ' + (monthIndex + 1) + 'ヶ月分');
-}
-
-function colorMonthlyAllSheets() {
-  colorMonthlySheet('④職人別月次',   1);
-  colorMonthlySheet('⑤ブランド別',   1);
-  colorMonthlySheet('⑥企画別',       2);
-  colorMonthlySheet('⑦製品別',       1);
-  colorMonthlySheet('⑧製品×職人別', 1);
 }
 
 // ================================================================
@@ -1179,85 +1083,6 @@ function appendToProductWorkerReport(reportSS, logRows, scheduleRows, startDate,
 }
 
 // ================================================================
-// ⑦（旧） 職人別ブランド×企画（月次追記型・月内 + 累計）「誰がどの事業・企画に」
-// ================================================================
-function appendToWorkerDetailReport(reportSS, logRows, scheduleRows, startDate, endDate, label) {
-  const HEADERS = ['年月', '職人名', 'ブランド', '企画名', '月内工数(h)', '月内労務費(円)', '累計工数(h)', '累計労務費(円)'];
-  const sheet = getOrInitSheet(reportSS, '⑦職人別', HEADERS, '#FF7043');
-
-  if (labelExists(sheet, label)) {
-    Logger.log('⑦職人別: ' + label + ' 既存 → スキップ');
-    return;
-  }
-
-  const productToBrand = new Map();
-  const planToBrand    = new Map();
-  const productPlanMap = new Map();
-  for (const s of scheduleRows) {
-    const brand = s[S.brand]    || '';
-    const plan  = s[S.planName] || '';
-    const prod  = s[S.product]  || '';
-    if (prod)         productToBrand.set(prod, brand);
-    if (plan)         planToBrand.set(plan, brand);
-    if (prod && plan) productPlanMap.set(prod, plan);
-  }
-
-  const allSampleLogs   = logRows.filter(r => r[L.type] === 'サンプル製造');
-  const monthSampleLogs = allSampleLogs.filter(r => { const d = toDate(r[L.date]); return d && d >= startDate && d <= endDate; });
-
-  const getPlan  = r => r[L.planName] || productPlanMap.get(r[L.product]) || r[L.product] || '';
-  const getBrand = r => productToBrand.get(r[L.product]) || planToBrand.get(r[L.planName]) || '未紐付け';
-
-  const allMap = new Map();
-  for (const r of allSampleLogs) {
-    const worker = r[L.worker] || '';
-    const plan   = getPlan(r);
-    if (!worker || !plan) continue;
-    const key = worker + '\t' + plan;
-    if (!allMap.has(key)) allMap.set(key, { worker, plan, brand: getBrand(r), workMin: 0, cost: 0 });
-    const e = allMap.get(key);
-    e.workMin += Number(r[L.workMin])   || 0;
-    e.cost    += Number(r[L.laborCost]) || 0;
-  }
-
-  const monthMap = new Map();
-  for (const r of monthSampleLogs) {
-    const worker = r[L.worker] || '';
-    const plan   = getPlan(r);
-    if (!worker || !plan) continue;
-    const key = worker + '\t' + plan;
-    if (!monthMap.has(key)) monthMap.set(key, { workMin: 0, cost: 0 });
-    const e = monthMap.get(key);
-    e.workMin += Number(r[L.workMin])   || 0;
-    e.cost    += Number(r[L.laborCost]) || 0;
-  }
-
-  const newRows = [...monthMap.keys()]
-    .sort((a, b) => a.localeCompare(b, 'ja'))
-    .map(key => {
-      const all   = allMap.get(key) || { workMin: 0, cost: 0 };
-      const month = monthMap.get(key);
-      const info  = allMap.get(key) || { worker: key.split('\t')[0], plan: key.split('\t')[1], brand: '' };
-      return [
-        label, info.worker, info.brand, info.plan,
-        +(month.workMin / 60).toFixed(1), month.cost,
-        +(all.workMin   / 60).toFixed(1), all.cost,
-      ];
-    });
-
-  if (newRows.length > 0) {
-    const insertRow = sheet.getLastRow() + 1;
-    sheet.getRange(insertRow, 1, newRows.length, HEADERS.length).setValues(newRows);
-    sheet.getRange(insertRow, 6, newRows.length, 1).setNumberFormat('#,##0');
-    sheet.getRange(insertRow, 8, newRows.length, 1).setNumberFormat('#,##0');
-  }
-
-  sheet.setFrozenRows(1);
-  sheet.autoResizeColumns(1, HEADERS.length);
-  Logger.log('⑦職人別 追記完了（' + newRows.length + '件 / ' + label + '）');
-}
-
-// ================================================================
 // ④ 職人別月次（月次追記型）②職人別週次の月次版
 // ================================================================
 function appendToWorkerMonthly(reportSS, logRows, startDate, endDate, label) {
@@ -1346,8 +1171,6 @@ function generateSummarySheet(year, month) {
 }
 
 // 単月を手動で生成/更新するラッパー（上書き型なので何度実行してもOK。月の途中でも安全）
-function runSummary202606() { generateSummarySheet(2026, 6); }
-function runSummary202607() { generateSummarySheet(2026, 7); }
 
 // 製品サマリーと販促サマリーの2枚を専用SS「試作課：日報サマリー」に生成し、
 // 同じSS内に月別タブ（例:「2026年06月 製品」）としてアーカイブする。
@@ -1727,107 +1550,11 @@ function buildSummarySheet(reportSS, logRows, scheduleRows, year, month, opts) {
 }
 
 // ================================================================
-// バックフィル：指定開始日から7日ごとに週次レポートをまとめて生成
-// ================================================================
-function generateWeeklyReportBackfill() {
-  // ★ 開始日を変更して実行してください
-  const START_DATE_STR = '2026/05/01';
-
-  const startDate = new Date(START_DATE_STR);
-  startDate.setHours(0, 0, 0, 0);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       19);
-  const reportSS     = getOrCreateReportSS();
-
-  let current = new Date(startDate);
-  let count   = 0;
-
-  while (current < today) {
-    const periodStart = new Date(current);
-    const periodEnd   = new Date(current);
-    periodEnd.setDate(periodEnd.getDate() + 6);
-    periodEnd.setHours(23, 59, 59, 999);
-
-    const periodEndDay = new Date(periodEnd);
-    periodEndDay.setHours(0, 0, 0, 0);
-    if (periodEndDay >= today) break;
-
-    appendToWeeklyTrend(reportSS, logRows, periodStart, periodEnd);
-    appendToWorkerWeekly(reportSS, logRows, periodStart, periodEnd);
-
-    current.setDate(current.getDate() + 7);
-    count++;
-  }
-
-  Logger.log('バックフィル完了: ' + count + '週分 → ' + reportSS.getUrl());
-}
-
-// ================================================================
-// シートの順番を並べ替える（1回のみ実行）
-// ================================================================
-function reorderSheets() {
-  const ss = getOrCreateReportSS();
-  // ⓪サマリー2枚は専用SS「試作課：日報サマリー」に移動（2026-07-16）
-  const order = ['①週次推移', '②職人別週次', '③月別推移', '④職人別月次', '⑤ブランド別', '⑥企画別', '⑦製品別', '⑧製品×職人別'];
-  order.forEach((name, i) => {
-    const sheet = ss.getSheetByName(name);
-    if (sheet) { ss.setActiveSheet(sheet); ss.moveActiveSheet(i + 1); }
-  });
-  Logger.log('シート並び替え完了');
-}
-
-
-// ================================================================
-// undefined行クリーンアップ（引数なし誤実行で生じた不正行を削除）
-// ================================================================
-function cleanupUndefinedRows() {
-  const reportSS = getOrCreateReportSS();
-  const targets = ['③月別推移', '⑤ブランド別', '⑥企画別', '⑦製品別', '⑧製品×職人別', '④職人別月次'];
-  targets.forEach(name => {
-    const sheet = reportSS.getSheetByName(name);
-    if (!sheet) return;
-    const lastRow = sheet.getLastRow();
-    if (lastRow < 2) return;
-    const vals = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-    for (let i = vals.length - 1; i >= 0; i--) {
-      const v = String(vals[i][0]);
-      if (v.includes('undefined') || v.trim() === '') {
-        sheet.deleteRow(i + 2);
-        Logger.log(name + ': ' + (i + 2) + '行目を削除（' + v + '）');
-      }
-    }
-  });
-  Logger.log('クリーンアップ完了');
-}
-
-// 2026年05月の月次を④だけ再生成するラッパー（④が空の場合に1回だけ実行）
-function run202605() { generateMonthlyReportForMonth(2026, 5); }
-
-// ⑧製品×職人別を単月だけ試し生成するラッパー
-function runProductWorker202605() {
-  const logRows      = getSheetData(REPORT_CONFIG.logSSId,      REPORT_CONFIG.logSheetName,       20);
-  const scheduleRows = getSheetData(REPORT_CONFIG.scheduleSSId, REPORT_CONFIG.scheduleSheetName, 15, 6);
-  const reportSS     = getOrCreateReportSS();
-  const startDate    = new Date(2026, 4,  1,  0,  0,  0,   0);
-  const endDate      = new Date(2026, 5,  0, 23, 59, 59, 999);
-  appendToProductWorkerReport(reportSS, logRows, scheduleRows, startDate, endDate, '2026年05月');
-}
-
-function run202606() { generateMonthlyReportForMonth(2026, 6); }
-
-// 7月分を月の途中で先取り集計する場合に実行（注意：実行すると8/1の自動実行は
-// 「2026年07月は既存」としてスキップされるため、月末に③〜⑧の2026年07月の行を
-// 削除してから run202607() を再実行して確定させること）
-function run202607() { generateMonthlyReportForMonth(2026, 7); }
-
-// ================================================================
 // 月の途中で「該当行削除→再実行」を安全に行うためのラッパー
 // ③④⑤⑥⑦⑧は月ラベルが既にあると追記をスキップする設計のため、先取り集計した後に
 // 追加で入力された日報（例：SOP作業など）を反映するには、該当月の行を一度削除してから
 // generateMonthlyReportForMonth を呼び直す必要がある。この関数はその手順をまとめて行う
-// （⓪サマリー2枚は上書き型のため、runSummary202607() 等の単体実行でも常に最新化される）
+// （⓪サマリー2枚は上書き型のため、runSummaryCurrentMonth() 等の単体実行でも常に最新化される）
 // ================================================================
 function refreshMonthlyReport(year, month) {
   const label = year + '年' + String(month).padStart(2, '0') + '月';
@@ -1857,7 +1584,6 @@ function refreshMonthlyReport(year, month) {
 }
 
 // 2026年07月を本日時点のデータで再集計するラッパー（③〜⑧の該当行削除→再生成→サマリー更新）
-function refresh202607() { refreshMonthlyReport(2026, 7); }
 
 // 月を指定せず「今月」を自動判定して再集計するラッパー（毎月新しいrun2026XX()を作らずに済む）
 function refreshCurrentMonth() {
@@ -2001,23 +1727,6 @@ function getOrCreateSeibanColumn_(sheet) {
 // どちらも「空でなければ採番済み」として一貫して扱えるようにする（2026-07-29）。
 function seibanKey_(val) {
   return String(val || '').trim();
-}
-
-// 製番列を先頭（A列）に移動する（2026-07-17: 一番左に表示したいというユーザー要望で1回限り実行）。
-// 既にA列にあれば何もしない。実行後は S 定数の列位置（すべて1列分右にずれた状態）と対応する。
-function moveSeibanColumnToFront_(sheet) {
-  const col = getOrCreateSeibanColumn_(sheet);
-  if (col === 1) return;
-  sheet.moveColumns(sheet.getRange(1, col, sheet.getMaxRows()), 1);
-  Logger.log((sheet.getName()) + ': 製番列をA列に移動しました（元は' + col + '列目）');
-}
-
-// 外部スケジュール表の製番列をA列に移動する手動実行用ラッパー。
-// 内部製品マスタ（スケジュールシート）側は Code.gs が列位置を固定で読んでいるため対象外
-// （動かす場合は Code.gs の getSchedules/submitReport/addSchedule 等も合わせて改修が必要）
-function moveSeibanColumnsToFront() {
-  moveSeibanColumnToFront_(SpreadsheetApp.openById(REPORT_CONFIG.scheduleSSId).getSheetByName(REPORT_CONFIG.scheduleSheetName));
-  Logger.log('製番列の先頭移動 完了（外部スケジュール表のみ）');
 }
 
 // ================================================================
@@ -2291,16 +2000,6 @@ function handleExternalScheduleEdit_(e) {
 
 // handleExternalScheduleEdit_用のインストール型トリガーを設定する（初回・変更時に1回だけ手動実行）。
 // 外部スケジュール表はWeeklyReportとは別スプレッドシートのため、単純トリガーonEditでは検知できない
-function setupExternalScheduleEditTrigger() {
-  ScriptApp.getProjectTriggers()
-    .filter(t => t.getHandlerFunction() === 'handleExternalScheduleEdit_')
-    .forEach(t => ScriptApp.deleteTrigger(t));
-  ScriptApp.newTrigger('handleExternalScheduleEdit_')
-    .forSpreadsheet(SpreadsheetApp.openById(REPORT_CONFIG.scheduleSSId))
-    .onEdit()
-    .create();
-  Logger.log('外部スケジュール表 編集トリガー設定完了');
-}
 
 // 手動テスト用：採番表のルックアップ結果をログに出力するだけ（トリガーを設定する前に確認する）
 function debugLookupSeiban(seiban) {
@@ -2420,139 +2119,10 @@ function syncSeibanToAppProductMaster_() {
   }
 }
 
-// ================================================================
-// 孤立した製品マスタ行のクリーンアップ（2026-07-24）
-// 製品名の改名・製番未リンクの手動追加などにより、外部スケジュール表に
-// 対応する行が一切見つからなくなった製品を、ユーザーが個別確認した上で削除する
-// ================================================================
-function cleanupOrphanedProducts() {
-  const ORPHANED_NAMES = [
-    'ミニボストン',
-    '(仮)新型バッグ',
-    '(仮)財布',
-    'なんばバック(仮)',
-    '27SS_コレクションライン_Rubber Bag',
-    'ユニークプロダクト / クエンチャー（6月）',
-    'トート（3型）胴修正',
-    'ライスバッグ',
-    'スエードトート・ストラップ',
-    'カブセトート',
-    'イヤホンアクセサリー',
-    'ユニークプロダクト_カセットテープMagWear',
-    '横トート',
-    '水風船',
-    'ホーボー撮影用',
-    '量産14本',
-    'A LEATHER ランドライダー量産14本',
-  ];
-  const names = new Set(ORPHANED_NAMES);
-
-  const appSheet = SpreadsheetApp.openById(REPORT_CONFIG.logSSId).getSheetByName('スケジュール');
-  if (!appSheet || appSheet.getLastRow() <= 1) { Logger.log('内部製品マスタが見つからないか空です'); return; }
-
-  const rows = appSheet.getRange(2, 1, appSheet.getLastRow() - 1, 2).getValues();
-  let deleted = 0;
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const name = String(rows[i][1] || '').trim();
-    if (names.has(name)) {
-      appSheet.deleteRow(i + 2);
-      deleted++;
-    }
-  }
-  Logger.log('孤立製品クリーンアップ完了: ' + deleted + '件削除');
-}
-
-// 手動テスト用ラッパー（GASエディタから実行。トリガー設定前に必ず1回実行して結果を確認する）
+// 手動実行用ラッパー（GASエディタまたはメニュー「製番を手動同期」から実行）
 function runSeibanSync() {
   syncSeibanToAppProductMaster_();
   Logger.log('製番同期 手動実行 完了');
-}
-
-function setupSeibanTrigger() {
-  ScriptApp.getProjectTriggers()
-    .filter(t => t.getHandlerFunction() === 'syncSeibanToAppProductMaster_')
-    .forEach(t => ScriptApp.deleteTrigger(t));
-  ScriptApp.newTrigger('syncSeibanToAppProductMaster_')
-    .timeBased().everyMinutes(10).create();
-  Logger.log('製番同期トリガー設定完了: 10分おき');
-}
-
-// ================================================================
-// 製番バグの後始末（2026-07-21）
-// 列マッピングのバグ（企画名/製品名の取り違え・見出し行の誤読）により
-// 内部製品マスタに誤追加された「SB」始まりの行を確認・削除し、
-// 誤ってグルーピングされた製番を全体リセットするための後始末関数群
-// ================================================================
-
-// 内部製品マスタ（アプリ本体SSの「スケジュール」シート）で、
-// ID列が「SB」始まりの行（バグ入り同期で誤追加された行）を一覧表示する（削除はしない）
-function debugSeibanBadRows() {
-  const s = SpreadsheetApp.openById(REPORT_CONFIG.logSSId).getSheetByName('スケジュール');
-  if (!s || s.getLastRow() <= 1) { Logger.log('内部製品マスタが見つからないか空です'); return; }
-  const rows = s.getRange(2, 1, s.getLastRow() - 1, 6).getValues();
-  let count = 0;
-  rows.forEach((r, i) => {
-    const id = String(r[0] || '');
-    if (id.indexOf('SB') === 0) {
-      count++;
-      Logger.log('行' + (i + 2) + ': ' + id + ' | 製品名=' + r[1] + ' | ブランド=' + r[4] + ' | 企画名=' + r[5]);
-    }
-  });
-  Logger.log('=== SB始まりの行: ' + count + '件 ===');
-}
-
-// debugSeibanBadRows() で確認した「SB」始まりの行を削除する
-function deleteSeibanBadRows() {
-  const s = SpreadsheetApp.openById(REPORT_CONFIG.logSSId).getSheetByName('スケジュール');
-  if (!s || s.getLastRow() <= 1) { Logger.log('内部製品マスタが見つからないか空です'); return; }
-  const rows = s.getRange(2, 1, s.getLastRow() - 1, 1).getValues();
-  let deleted = 0;
-  // 下の行から削除しないと、削除するたびに行番号がズレて対象を取り違える
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const id = String(rows[i][0] || '');
-    if (id.indexOf('SB') === 0) {
-      s.deleteRow(i + 2);
-      deleted++;
-    }
-  }
-  Logger.log('削除完了: ' + deleted + '件（内部製品マスタのSB始まり行）');
-}
-
-// 外部スケジュール表・内部製品マスタ両方の「製番」列の数字を全部クリアする
-// （誤ったグルーピングで振られた番号をリセットし、修正済みコードで振り直すため）
-function resetSeibanColumns() {
-  const extSheet = SpreadsheetApp.openById(REPORT_CONFIG.scheduleSSId).getSheetByName(REPORT_CONFIG.scheduleSheetName);
-  const extCol   = getOrCreateSeibanColumn_(extSheet);
-  const extLast  = extSheet.getLastRow();
-  if (extLast >= 6) extSheet.getRange(6, extCol, extLast - 5, 1).clearContent();
-
-  const appSheet = SpreadsheetApp.openById(REPORT_CONFIG.logSSId).getSheetByName('スケジュール');
-  const appCol   = getOrCreateSeibanColumn_(appSheet);
-  const appLast  = appSheet.getLastRow();
-  if (appLast >= 2) appSheet.getRange(2, appCol, appLast - 1, 1).clearContent();
-
-  Logger.log('製番列リセット完了（外部スケジュール表・内部製品マスタとも）');
-}
-
-// ================================================================
-// トリガー設定
-// ================================================================
-function setupWeeklyTrigger() {
-  ScriptApp.getProjectTriggers()
-    .filter(t => t.getHandlerFunction() === 'generateWeeklyReport')
-    .forEach(t => ScriptApp.deleteTrigger(t));
-  ScriptApp.newTrigger('generateWeeklyReport')
-    .timeBased().onWeekDay(ScriptApp.WeekDay.THURSDAY).atHour(8).create();
-  Logger.log('週次トリガー設定完了: 毎週木曜 8:00');
-}
-
-function setupMonthlyTrigger() {
-  ScriptApp.getProjectTriggers()
-    .filter(t => t.getHandlerFunction() === 'generateMonthlyReport')
-    .forEach(t => ScriptApp.deleteTrigger(t));
-  ScriptApp.newTrigger('generateMonthlyReport')
-    .timeBased().onMonthDay(1).atHour(8).create();
-  Logger.log('月次トリガー設定完了: 毎月1日 8:00');
 }
 
 // ================================================================
@@ -2617,6 +2187,11 @@ function debugProductCountMismatch() {
   });
   Logger.log('=== 差分候補: ' + extraCount + '件 ===');
 }
+
+// debugProductCountMismatch()の「差分候補」を実際に削除する前の安全確認用。
+// 指定した製品名が日報ログで実際に使われているかを確認する（削除は行わない）。
+// 2026-08-07: 「イヤホンアクセサリー」等の孤立候補を削除する前に、
+// 実は日報側で現役利用されているものが無いか確認したいという要望を受けて追加。
 
 // ================================================================
 // スプレッドシートからデータ取得
@@ -2796,364 +2371,4 @@ function countBusinessDays(startDate, endDate) {
     d.setDate(d.getDate() + 1);
   }
   return count;
-}
-
-// ================================================================
-// 使い方ガイド Google ドキュメント作成（1回のみ実行）
-// ================================================================
-function createUsageGuideDoc() {
-  const doc  = DocumentApp.create('試作課レポート 使い方ガイド');
-  const body = doc.getBody();
-  body.clear();
-
-  const H1 = DocumentApp.ParagraphHeading.HEADING1;
-  const H2 = DocumentApp.ParagraphHeading.HEADING2;
-  const H3 = DocumentApp.ParagraphHeading.HEADING3;
-
-  function addHeading(text, level) { body.appendParagraph(text).setHeading(level); }
-  function addText(text)           { body.appendParagraph(text); }
-  function addItalic(text)         { body.appendParagraph(text).editAsText().setItalic(true); }
-  function addTable(data) {
-    const table = body.appendTable(data);
-    const headerRow = table.getRow(0);
-    for (let i = 0; i < headerRow.getNumCells(); i++) {
-      const cell = headerRow.getCell(i);
-      cell.setBackgroundColor('#37474F');
-      cell.editAsText().setForegroundColor('#FFFFFF').setBold(true);
-    }
-    body.appendParagraph('');
-  }
-
-  addHeading('集計レポート 使い方ガイド', H1);
-  addText('試作課の工数・労務費データを集計した週次・月次レポートの読み方と活用方法です。');
-  addText('【労務費とは】作業時間(分) × 42円（間接費込み概算）で算出した人件費の概算額です。日報提出時に自動計算されてログに保存されます。');
-  addText('【人工とは】「何人が何日関わったか」を表す単位。1人が1日出勤して日報を提出すれば1人工。工数(h)は時間の量、人工は頭数×日数を表すため、両方をセットで見るとリソース配分をより正確に把握できます。');
-  body.appendParagraph('');
-
-  // ⓪ 日報サマリー
-  addHeading('⓪ 日報サマリー（濃青タブ）／⓪ 販促サマリー（橙タブ）', H2);
-  addText('試作課が「何に・どれくらい時間を使い・今どんな状況か」を誰でも数分で理解できるようにする共有用ダッシュボード。専用スプレッドシート「試作課：日報サマリー」に出力される（集計データ本体はWeeklyReportのまま）。製品開発は「⓪日報サマリー」、販促物（ショート動画・撮影用制作など）は「⓪販促サマリー」に分けて表示する。毎月1日の自動実行で前月分に更新され、同時に月別タブ（例:「2026年06月 製品」・グレータブ）として自動アーカイブされるため、過去の月と見比べられる（runSummary2026XX() で手動更新も可能。同じ月の再実行はアーカイブごと置き換わるので安全）。');
-  addTable([
-    ['セクション', '内容'],
-    ['📦 今月の活動', '対象区分の工数・労務費・稼働案件数・担当人数＋参考として課全体総工数・間接のKPIカード（前月比付き）'],
-    ['🔧 工数の内訳（製作／付帯業務）', '中分類の「分類」（設定タブで変更可）に基づき、製作（型紙・仮制作・本制作など）と付帯業務（原価表・工程表・引き継ぎ・ミーティングなど）の時間配分を表示。中分類対象外＝中分類の選択肢がないフェーズ（試験体・量産・エイジングサンプル・修理・SOP・治具）、中分類未選択＝選べたのに選択されなかった時間（2026/6/17の機能追加以前の日報を含む）'],
-    ['🗂 間接業務（その他）の内訳', '日報の「その他」種別（定例ミーティング・事務作業・棚卸しなど）の時間内訳。課全体の参考値で、KPIカード「うち間接（参考）」の中身。⓪日報サマリーのみに表示'],
-    ['📈 案件別工数 TOP10', '月内工数の横棒ランキング。濃い青=上位20%、薄い青=20〜40%（評価ではなく事実の共有）'],
-    ['🛠 工程別の時間配分', 'モック/1st/2nd/3rd以降/最終/色増し/試験体/修理/SOP/治具/その他の時間配分と構成比'],
-    ['👥 担当者別稼働状況', '体制の共有が目的。効率・生産性の比較には使わない'],
-    ['📋 案件一覧', '月内に日報のあった案件の今月/累計工数・現在工程・担当者'],
-    ['💬 今月のトピック', '手入力欄。数字だけでは伝わらない背景をメモ（同じ月の再生成では消えない）'],
-  ]);
-  addItalic('表現ルール：標準工数が未設定のため「超過」「異常」と断定せず、「工数上位」「工数が大きかった案件」など中立的な表現と青の濃淡を使う。赤は未入力・データ不整合など客観的な異常のみ。');
-
-  // ① 週次推移
-  addHeading('① 週次推移（青タブ）', H2);
-  addText('試作課全体の1週間まとめ。実働時間・製造比率・労務費が1行/週で蓄積される。');
-  addTable([
-    ['見るポイント', '活用例'],
-    ['実稼働人工', '実際に日報を提出した職人×日のユニーク組み合わせ数。フル人工との差が欠勤・休暇分'],
-    ['稼働日数', '集計期間内に日報が提出された日数'],
-    ['フル人工', '集計期間内の営業日数（土日除く）× 稼働人数。フル稼働した場合の最大人工数'],
-    ['稼働人数', '期間内に1件でも日報を提出した職人の人数'],
-    ['実働(h)・製造(h)・間接(h)', '試作課全体の実働・製造・間接の時間内訳'],
-    ['製造比率(%)', '70%以上：緑、50%以上：橙、50%未満：赤で色分け。低い週は間接業務が多かった週'],
-    ['製品数', '期間内に登場したユニークな製品の数（サンプル製造のみ）'],
-    ['労務費(円)', '作業時間(分) × 42円の合計。月次予算との比較に使える'],
-  ]);
-
-  // ② 職人別週次
-  addHeading('② 職人別週次（水色タブ）', H2);
-  addText('①の内訳版。誰が何時間働いて、どれだけ製造に使ったかがわかる。週ごとに白・薄青で色分けされている。');
-  addTable([
-    ['見るポイント', '活用例'],
-    ['製造比率の差', '職人間で製造比率に大きな差がある週は業務分担を見直すヒントになる'],
-    ['稼働日数', '有休・欠勤の把握'],
-  ]);
-
-  // ③ 月別推移
-  addHeading('③ 月別推移（黄タブ）', H2);
-  addText('試作課全体の月まとめ（1行/月で蓄積）。上長向け月次報告の数字がそのまま読み取れる。');
-  addTable([
-    ['見るポイント', '活用例'],
-    ['平均製品工数(h)', '1製品あたりの平均作業時間。増えていれば案件難易度が上がっているか手戻りが多いサイン。減っていればスキルアップや仕様の安定化が起きている証拠'],
-    ['企画数', '処理した企画数の推移で試作課のキャパ感を把握'],
-  ]);
-
-  // ④ 職人別月次
-  addHeading('④ 職人別月次（青緑タブ）', H2);
-  addText('職人ごとの月まとめ（1行/職人×月）。②職人別週次の月次集計版。月次報告での職人別実績に使える。');
-  addTable([
-    ['見るポイント', '活用例'],
-    ['稼働日数・実働(h)', '職人ごとの月間稼働量を把握。欠勤・有休が多い月の確認'],
-    ['製造比率(%)', '職人ごとに製造vs間接の比率を月単位で比較'],
-    ['労務費(円)', '職人ごとの月間人件費（作業時間(分) × 42円）'],
-  ]);
-
-  // ⑤ ブランド別
-  addHeading('⑤ ブランド別（薄黄タブ）', H2);
-  addText('ブランドごとに何時間・いくら使ったか（月次追記）。上長への「対事業リソース報告」に直接使えるシート。');
-  addTable([
-    ['見るポイント', '活用例'],
-    ['月内工数(h) vs 累計工数(h)', '今月特定ブランドに集中していないか確認。工数(h)は時間量を表す'],
-    ['月内_製品(h)・月内_販促(h)', '製品開発と販促物（ショート動画等）の工数内訳。労務費の配賦先を分ける判断に使う'],
-    ['担当者（全期間）', '全期間を通してそのブランドに携わった職人が一覧できる'],
-  ]);
-  addItalic('工数(h)はそのブランドに費やした時間の合計。人工は「何人が何日関わったか」の頭数。両方をセットで見ることでリソース配分をより正確に把握できます。');
-
-  // ⑥ 企画別
-  addHeading('⑥ 企画別（紫タブ）', H2);
-  addText('企画単位で誰がいつ何時間使ったか（月次追記）。フェーズ大分類・中分類（型紙/仮制作/本制作/原価表/工程表）の両方の内訳列あり。');
-  addText('対象フェーズ：モック、ファースト、セカンド、サード、フォース、フィフス、最終、色増し、サンプル、商用、SOP、自由、量産');
-  addTable([
-    ['見るポイント', '活用例'],
-    ['累計_ファースト', 'ファーストが短い企画は仕様が固まっていた証拠。モックとファーストを比べることで設計精度がわかる'],
-    ['累計_モック〜最終', 'フェーズが進むごとに工数が減っているか確認。増えていれば手戻りや仕様変更のサイン'],
-    ['累計_型紙・抜き型', '型紙作成に費やした累計時間。企画間・フェーズ間で比較可能'],
-    ['累計_仮制作', '部分修正・部分サンプルにかかった累計時間'],
-    ['月内_中分類各列', '今月どの作業種別に時間を使ったか'],
-    ['作業日数', '試作開始から完了までの実稼働日数'],
-  ]);
-  addItalic('「この企画、なぜ時間がかかったか」の分析起点になるシート。型紙作成 vs 仮制作の比率を企画間で比べることで、工程ごとのボトルネックが見える。');
-  addItalic('【記入ルール】裁断は各サンプルフェーズ（モック・ファーストなど）の開始時に行う作業です。裁断の時間は別フェーズとして記録せず、そのサンプルフェーズの作業時間に含めて入力してください。');
-  body.appendParagraph('');
-
-  // ⑦ 製品別
-  addHeading('⑦ 製品別（青緑タブ）', H2);
-  addText('製品ごとにチーム合計で何時間・どのフェーズに使ったか（月次追記）。1行 = 製品1件 × 1ヶ月。⑥企画別より細かく、⑧製品×職人別を職人でまとめた粒度。');
-  addTable([
-    ['見るポイント', '活用例'],
-    ['区分', '「製品」か「販促」か。販促物の工数を除外して製品開発の実力値を見る'],
-    ['月内_各フェーズ列', '製品ごとに今月どのフェーズに時間を使ったかが見える'],
-    ['試験体・修理・SOP・治具 列', 'サンプル製作以外の重要業務にかけた時間。「この製品のSOP作成に何時間」が製品単位で追える'],
-    ['担当人数・担当者（累計）', 'その製品に関わった人数と顔ぶれ'],
-  ]);
-
-  // ⑧ 製品×職人別
-  addHeading('⑧ 製品×職人別（橙タブ）', H2);
-  addText('製品×職人の組み合わせで工数を集計（月次追記）。1行 = 製品1件 × 職人1人 × 1ヶ月。フェーズ大分類別の月内・累計内訳あり。');
-  addTable([
-    ['見るポイント', '活用例'],
-    ['製品名でフィルタ', '「この製品に誰が何時間かけたか・どのフェーズが多かったか」が一覧できる'],
-    ['職人名でフィルタ', '「この職人は今月どの製品のどのフェーズを担当したか」がわかる'],
-    ['企画名でフィルタ', '「この企画の製品群に誰が関わったか」が一覧できる'],
-    ['月内_各フェーズ列', '製品×職人ごとに今月どのフェーズに時間を使ったかが見える'],
-  ]);
-
-  // 今後の活用
-  addHeading('今後の活用（データが3ヶ月以上蓄積されてから）', H2);
-  addTable([
-    ['やりたいこと', '使うシート', '方法'],
-    ['フェーズが進むごとに工数が減っているか確認', '⑥企画別', '同一企画の累計_モック/ファースト/セカンド列を比較'],
-    ['特定ブランドへの年間リソース配分', '⑤ブランド別', 'ブランド名でフィルタして累計工数を縦に追う'],
-    ['月ごとの繁忙期・閑散期の把握', '③月別推移', '稼働日数・製造(h)の推移をグラフ化'],
-    ['職人ごとの月間稼働推移', '④職人別月次', '職人名でフィルタして実働・製造比率を縦に追う'],
-  ]);
-
-  // 日報入力ミスの影響と調べ方
-  addHeading('日報入力ミスの影響と調べ方', H2);
-  addHeading('よくある入力ミスとその影響', H3);
-  addTable([
-    ['入力ミス', '影響するシート', '具体的な症状'],
-    ['製品名の表記ゆれ（スペース・全角半角など）', '⑤⑥', 'その製品の工数が「未紐付け」に入る'],
-    ['種別（サンプル製造/その他）の選び間違い', '①②③④', '製造比率が実態と合わなくなる'],
-    ['フェーズの入力ミス', '⑥', 'フェーズ別累計の数字が実態と合わなくなる'],
-    ['作業時間の入力ミス（分単位）', '全シート', '工数・労務費がすべてズレる'],
-    ['企画名が空欄', '⑥', 'その企画への工数が集計されない'],
-    ['職人名の表記ゆれ', '②④', '同一人物が別人として2行で集計される'],
-    ['製品/販促区分の設定ミス（製品管理）', '⑤⑥⑦⑧', '製品/販促の内訳が実態と合わなくなる'],
-  ]);
-
-  addHeading('調べ方（GASエディタから実行）', H3);
-  addTable([
-    ['関数名', '何がわかるか'],
-    ['debugUnmatched()', 'スケジュールSSと突合できていない製品と類似候補を一覧表示。表記ゆれの調査に使う'],
-    ['debugWeeklyReport()', '直近1週間のサンプル製造ログと突合状況を確認'],
-    ['testAccess()', '日報ログSS・スケジュールSSに正常にアクセスできているか確認'],
-  ]);
-
-  addHeading('入力ミスを見つけたら', H3);
-  addText('1. 日報ログSSの該当行を直接修正する');
-  addText('2. 集計レポートSSの該当月シート（③④⑤⑥）の該当月行を削除する');
-  addText('3. GASエディタで該当月のラッパー関数（例：run202606()）を実行して再集計する');
-
-  // 製品リストの自動クリーンアップ
-  addHeading('製品リストの自動クリーンアップ', H2);
-  addText('日報アプリの製品リスト（設定 → 製品管理）は、毎週木曜の自動実行時にスケジュールSSと突合し、完了した製品を自動で削除します。');
-  addTable([
-    ['項目', '内容'],
-    ['実行タイミング', '毎週木曜 朝8時（週次レポートと同時）'],
-    ['削除条件', 'スケジュールSSのステータス（M列）が全行「完了」または「中断」の製品'],
-    ['削除されない場合', 'ステータスが1行でも「試作中」「予定」など進行中のものがある / スケジュールSSに製品名の登録がない'],
-    ['手動で今すぐ実行', 'GASエディタで archiveCompletedSchedules() を実行'],
-  ]);
-  addHeading('製品が削除されない時の確認ポイント', H3);
-  addTable([
-    ['確認事項', '対処'],
-    ['アプリの製品名とスケジュールSSのD列（サンプル製品名称）が一致しているか', 'debugUnmatched() を実行して表記ゆれを確認・修正'],
-    ['スケジュールSSのステータス（M列）が正しく「完了」になっているか', 'スケジュールSSを直接開いて確認'],
-    ['同じ製品名で「完了」以外の行が残っていないか', 'スケジュールSSでその製品名を検索して全行のステータスを確認'],
-  ]);
-
-  // 各シートの列定義と計算式
-  addHeading('各シートの列定義と計算式', H2);
-  addText('各シートの全列が「何を・どう計算しているか」を記載します。');
-  body.appendParagraph('');
-
-  addHeading('共通の前提', H3);
-  addTable([
-    ['用語', '定義'],
-    ['実働(分)', '出勤〜退勤の時間 − 休憩時間。職人・日付でユニークに取得（同じ人が同じ日に複数行提出しても1回分のみ加算）'],
-    ['作業時間(分)', '各作業行に入力した分数。1日に複数行入力した場合は合計'],
-    ['製造(分)', '種別＝「サンプル製造」の作業時間(分)の合計'],
-    ['間接(分)', '種別＝「その他」の作業時間(分)の合計（社内MTG・事務作業など）'],
-    ['労務費(円)', '作業時間(分) × 42円（間接費込み概算）。提出時に自動計算してログに保存済み'],
-    ['人工', '職人×日付のユニーク組み合わせ数。1人が1日日報を提出すれば1人工'],
-    ['突合', '日報の製品名とスケジュールSSの製品名・企画名を照合すること'],
-    ['製品/販促区分', '製品マスタ（設定→製品管理）で選択した区分。日報提出時にログへ記録。区分が空の過去ログは現在の製品マスタから補完し、不明なものは「製品」扱い'],
-  ]);
-
-  addHeading('① 週次推移', H3);
-  addText('集計期間：毎週木曜の自動実行日から7日前〜前日（例：6/12実行 → 6/5〜6/11）');
-  addTable([
-    ['列名', '計算内容'],
-    ['集計開始', '集計期間の開始日'],
-    ['集計終了', '集計期間の終了日'],
-    ['実稼働人工', '実際に日報を提出した職人×日のユニーク組み合わせ数'],
-    ['稼働日数', '期間内に誰かが日報を提出した日数（ユニーク日付の数）'],
-    ['フル人工', '集計期間内の営業日数（土日除く）× 稼働人数。フル稼働した場合の最大人工数'],
-    ['稼働人数', '期間内に1件でも日報を提出した職人の人数'],
-    ['実働(h)', '全職人の実働(分)合計 ÷ 60（職人×日付で重複排除済み）'],
-    ['製造(h)', '全製造作業の作業時間(分)合計 ÷ 60'],
-    ['間接(h)', '全間接作業の作業時間(分)合計 ÷ 60'],
-    ['製造比率(%)', '製造(分) ÷ 実働(分) × 100（四捨五入）※70%以上：緑、50%以上：橙、50%未満：赤'],
-    ['製品数', '期間内に登場したユニークな製品名の数（サンプル製造のみ）'],
-    ['労務費(円)', '期間内の全行の労務費合計（作業時間(分) × 42円）'],
-  ]);
-
-  addHeading('② 職人別週次', H3);
-  addText('①と同じ集計期間で、職人ごとに1行出力。');
-  addTable([
-    ['列名', '計算内容'],
-    ['集計開始・終了', '①と同じ'],
-    ['職人名', '日報に記入された職人名'],
-    ['稼働日数', 'その職人が期間内に日報を提出した日数'],
-    ['実働(h)', 'その職人の実働(分)合計 ÷ 60（日付で重複排除済み）'],
-    ['製造(h)', 'その職人の製造作業時間(分)合計 ÷ 60'],
-    ['間接(h)', 'その職人の間接作業時間(分)合計 ÷ 60'],
-    ['製造比率(%)', 'その職人の製造(分) ÷ 実働(分) × 100'],
-    ['労務費(円)', 'その職人の期間内の労務費合計'],
-  ]);
-
-  addHeading('③ 月別推移', H3);
-  addText('対象月の1日〜末日を集計（①の月次版）。');
-  addTable([
-    ['列名', '計算内容'],
-    ['年月', '例：「2026年05月」'],
-    ['実稼働人工', '月内に日報を提出したユニーク職人×日の組み合わせ数'],
-    ['稼働日数', '月内に誰かが日報を提出したユニーク日付の数'],
-    ['実働(h)', '全職人の実働(分)合計 ÷ 60（職人×日付で重複排除済み）'],
-    ['製造(h)', '製造作業時間(分)合計 ÷ 60'],
-    ['間接(h)', '間接作業時間(分)合計 ÷ 60'],
-    ['製造比率(%)', '製造(分) ÷ 実働(分) × 100 ※色分けあり'],
-    ['製品数', '月内に登場したユニーク製品名の数'],
-    ['企画数', '月内に登場したユニーク企画名の数'],
-    ['平均製品工数(h)', '月内の製造作業時間合計 ÷ 製品数 ÷ 60'],
-    ['労務費(円)', '月内の全労務費合計'],
-  ]);
-
-  addHeading('④ 職人別月次', H3);
-  addText('月次追記。職人ごとに1行（月内に日報を提出した職人のみ）。');
-  addTable([
-    ['列名', '計算内容'],
-    ['年月', '例：「2026年05月」'],
-    ['職人名', '日報に記入された職人名'],
-    ['稼働日数', 'その職人が月内に日報を提出した日数'],
-    ['実働(h)', 'その職人の実働(分)合計 ÷ 60（日付で重複排除済み）'],
-    ['製造(h)', 'その職人の製造作業時間(分)合計 ÷ 60'],
-    ['間接(h)', 'その職人の間接作業時間(分)合計 ÷ 60'],
-    ['製造比率(%)', 'その職人の製造(分) ÷ 実働(分) × 100'],
-    ['労務費(円)', 'その職人の月内の労務費合計'],
-  ]);
-
-  addHeading('⑤ ブランド別', H3);
-  addText('月次追記。月内に動きがあったブランドのみ追記（当月に1件も日報がないブランドは出ない）。');
-  addTable([
-    ['列名', '計算内容'],
-    ['年月', '例：「2026年05月」'],
-    ['ブランド', 'スケジュールSSのブランド名'],
-    ['企画数', 'そのブランドに紐づく企画数（累計・全期間のユニーク企画名数）'],
-    ['製品数', 'そのブランドに紐づく製品数（累計・全期間のユニーク製品名数）'],
-    ['月内工数(h)', '当月のそのブランドへの作業時間(分)合計 ÷ 60'],
-    ['月内_製品(h)・月内_販促(h)', '月内工数(h)の製品/販促区分別の内訳（0の場合は空欄）'],
-    ['月内労務費(円)', '当月の労務費合計'],
-    ['累計工数(h)', '全期間のそのブランドへの作業時間(分)合計 ÷ 60'],
-    ['累計_製品(h)・累計_販促(h)', '累計工数(h)の製品/販促区分別の内訳（0の場合は空欄）'],
-    ['累計労務費(円)', '全期間の労務費合計'],
-    ['担当者（全期間）', '全期間を通してそのブランドに関わった職人名（「、」区切り）'],
-  ]);
-
-  addHeading('⑥ 企画別', H3);
-  addText('月次追記。月内に動きがあった企画のみ追記。A列（ステータス）は非表示。');
-  addText('対象フェーズ：モック、ファースト、セカンド、サード、フォース、フィフス、最終、色増し、サンプル、商用、SOP、自由、量産');
-  addTable([
-    ['列名', '計算内容'],
-    ['ステータス', 'スケジュールSSのステータス（A列・非表示）'],
-    ['年月', '例：「2026年05月」'],
-    ['企画名', '企画名（スケジュールSSから取得、なければ製品名）'],
-    ['ブランド', 'スケジュールSSから逆引き'],
-    ['製品名', 'その企画に紐づいた全製品名（「、」区切り、全期間）'],
-    ['月内工数(h)', '当月の作業時間(分)合計 ÷ 60'],
-    ['月内_製品(h)・月内_販促(h)', '月内工数(h)の製品/販促区分別の内訳（0の場合は空欄）'],
-    ['月内労務費(円)', '当月の労務費合計'],
-    ['累計工数(h)', '全期間の作業時間(分)合計 ÷ 60'],
-    ['累計_製品(h)・累計_販促(h)', '累計工数(h)の製品/販促区分別の内訳（0の場合は空欄）'],
-    ['累計労務費(円)', '全期間の労務費合計'],
-    ['担当者（月内）', '当月に関わった職人名'],
-    ['担当者（累計）', '全期間に関わった職人名'],
-    ['実作業開始', '全期間で最も古い日報の日付'],
-    ['実作業最終', '全期間で最も新しい日報の日付'],
-    ['作業日数', '実作業最終 − 実作業開始 + 1（カレンダー日数）'],
-    ['計画開始', 'スケジュールSSの試作開始日'],
-    ['計画完了', 'スケAジュールSSの試作完了日'],
-    ['月内_各フェーズ(h)', '当月・フェーズ大分類別の作業時間(分)合計 ÷ 60（モック〜量産の全フェーズ列）'],
-    ['月内_型紙・抜き型(h)', '当月・中分類＝型紙作成・修正／抜き型作成（旧名称含む）の作業時間(分)合計 ÷ 60'],
-    ['月内_仮制作〜工程表(h)', '同上（仮制作 / 本制作 / 原価表 / 工程表）各中分類列'],
-    ['累計_各フェーズ(h)', '全期間版のフェーズ大分類内訳（全フェーズ列）'],
-    ['累計_型紙・抜き型〜工程表(h)', '全期間版のフェーズ中分類内訳（5列）。企画間比較の主役'],
-  ]);
-
-  addHeading('⑦ 製品別', H3);
-  addText('月次追記。製品ごとに1行（チーム合計）。当月に動きがあった製品のみ追記。');
-  addTable([
-    ['列名', '計算内容'],
-    ['年月', '例：「2026年05月」'],
-    ['企画名', 'スケジュールSSから製品名で逆引き（なければ日報の企画名）'],
-    ['ブランド', 'スケジュールSSから逆引き'],
-    ['製品名', '日報に記入された製品名'],
-    ['区分', '「製品」または「販促」。日報ログの区分（空欄は製品マスタから補完、不明は「製品」）'],
-    ['担当人数・担当者（累計）', '全期間でその製品に関わった職人の人数と名前'],
-    ['月内工数(h)・月内労務費(円)', '当月のその製品への作業時間(分)合計 ÷ 60 と労務費合計'],
-    ['累計工数(h)・累計労務費(円)', '全期間版'],
-    ['月内_各フェーズ(h)・累計_各フェーズ(h)', 'フェーズ大分類別の作業時間内訳 ÷ 60'],
-  ]);
-
-  addHeading('⑧ 製品×職人別', H3);
-  addText('月次追記。製品×職人の組み合わせで1行。当月に動きがあったもののみ追記。');
-  addTable([
-    ['列名', '計算内容'],
-    ['年月', '例：「2026年05月」'],
-    ['企画名', 'スケジュールSSから製品名で逆引き'],
-    ['製品名', '日報に記入された製品名'],
-    ['区分', '「製品」または「販促」。⑦と同じルールで判定'],
-    ['職人名', '日報に記入された職人名'],
-    ['月内工数(h)', '当月のその製品×職人の作業時間(分)合計 ÷ 60'],
-    ['月内労務費(円)', '当月の労務費合計'],
-    ['累計工数(h)', '全期間のその製品×職人の作業時間(分)合計 ÷ 60'],
-    ['累計労務費(円)', '全期間の労務費合計'],
-    ['月内_各フェーズ(h)', '当月・フェーズ大分類別の作業時間(分)合計 ÷ 60（全フェーズ列）'],
-    ['累計_各フェーズ(h)', '全期間・フェーズ大分類別の作業時間(分)合計 ÷ 60（全フェーズ列）'],
-  ]);
-
-  doc.saveAndClose();
-  Logger.log('✓ ガイドドキュメント作成完了: ' + doc.getUrl());
 }

@@ -1987,15 +1987,24 @@ function handleExternalScheduleEdit_(e) {
   const row = e.range.getRow();
   if (row < 6) return;  // 1〜5行目は見出し・注意書き
 
+  const col = e.range.getColumn();
   const seibanCol = getOrCreateSeibanColumn_(editedSheet);
-  if (e.range.getColumn() !== seibanCol) return;
 
-  const seiban = seibanKey_(e.range.getValue());
-  if (!seiban) return;
+  if (col === seibanCol) {
+    const seiban = seibanKey_(e.range.getValue());
+    if (!seiban) return;
+    const info = lookupSeibanMasterByNumber_(seiban);
+    if (!info) { Logger.log('採番表に見つからない試作番号: ' + seiban); return; }
+    fillExternalScheduleRow_(editedSheet, row, info);
+    return;
+  }
 
-  const info = lookupSeibanMasterByNumber_(seiban);
-  if (!info) { Logger.log('採番表に見つからない試作番号: ' + seiban); return; }
-  fillExternalScheduleRow_(editedSheet, row, info);
+  // ステータス列（O列）の編集を検知したら、日報アプリの製品マスタを即時同期する。
+  // 完了→進行中に戻した場合、10分おきの自動トリガーを待たずに反映させるため（2026-08-07追加）。
+  if (col === S.status + 1) {
+    syncSeibanToAppProductMaster_();
+    Logger.log('ステータス編集を検知 → 日報アプリの製品マスタを即時同期');
+  }
 }
 
 // handleExternalScheduleEdit_用のインストール型トリガーを設定する（初回・変更時に1回だけ手動実行）。

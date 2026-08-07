@@ -150,6 +150,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
   <div class="cover-badges">
     <a class="cover-badge" href="#admin">⚙️ 設定する人向け</a>
     <a class="cover-badge" href="#step1">📝 日報を入れる人向け</a>
+    <a class="cover-badge" href="#schedule">🔢 採番表・外部スケジュール表を管理する人向け</a>
   </div>
 </div>
 
@@ -178,6 +179,17 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
       <div class="toc-col-label" style="margin-top:16px">📂 補足</div>
       <ul class="toc-list">
         <li><a href="#sonota"><span class="toc-part" style="background:#e5e7eb;color:#6b7280">?</span>「その他」に入れるもの</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="toc-cols" style="margin-top:24px;grid-template-columns:1fr">
+    <div>
+      <div class="toc-col-label">🔢 採番表・外部スケジュール表を管理する人</div>
+      <ul class="toc-list">
+        <li><a href="#schedule"><span class="toc-part" style="background:#5e43a0;color:#fff">C1</span>採番表・外部スケジュール表とは</a></li>
+        <li><a href="#seiban-rule"><span class="toc-part" style="background:#5e43a0;color:#fff">C2</span>試作番号（製番）のルール</a></li>
+        <li><a href="#schedule-flow"><span class="toc-part" style="background:#5e43a0;color:#fff">C3</span>登録・入力の流れ</a></li>
+        <li><a href="#schedule-timing"><span class="toc-part" style="background:#5e43a0;color:#fff">C4</span>ステータス変更が日報アプリに反映されるタイミング</a></li>
       </ul>
     </div>
   </div>
@@ -247,40 +259,53 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
     <div class="step" id="register-product">
       <div class="step-num admin">A3</div>
       <div class="step-body">
-        <h3>製品・フェーズを登録する</h3>
-        <p>「👜 製品管理」から現在進行中のサンプル製品を登録します。シーズン・型振・VMD、ブランド、企画名、製品名の順に入力してください。</p>
+        <h3>製品はもう手入力しない（採番表から自動で反映）</h3>
+        <p>以前は設定タブの「👜 製品管理」から製品を手入力していましたが、現在は<strong>採番表・外部スケジュール表から自動で同期される</strong>仕組みに変わりました。設定タブの「製品管理」は一覧表示のみの<strong>読み取り専用</strong>です。</p>
         <div class="mock">
-          <div class="mock-label">設定タブ ＞ 製品管理</div>
+          <div class="mock-label">設定タブ ＞ 製品一覧（読み取り専用）</div>
           <div class="mock-acc">
-            <div class="mock-acc-ttl open">👜 製品管理 <span>▲</span></div>
+            <div class="mock-acc-ttl open">👜 製品一覧（読み取り専用） <span>▲</span></div>
             <div class="mock-acc-body">
-              <div class="mock-row">
-                <div class="mock-field">
-                  <label>シーズン・型振・VMD</label>
-                  <div class="mock-input">2027SS / VN型振り</div>
-                </div>
-                <div class="mock-field">
-                  <label>ブランド</label>
-                  <div class="mock-input">TSUCHIYA</div>
-                </div>
-                <div class="mock-field">
-                  <label>企画名</label>
-                  <div class="mock-input">27SS 新メンズ</div>
-                </div>
-              </div>
-              <div class="mock-row">
-                <div class="mock-field" style="flex:3">
-                  <label>サンプル製品名称</label>
-                  <div class="mock-input active">バックパック 組み立て</div>
-                </div>
-                <div style="display:flex;align-items:flex-end">
-                  <div class="mock-btn gray" style="height:44px">追加</div>
-                </div>
-              </div>
+              <table style="width:100%;border-collapse:collapse;font-size:13px">
+                <thead>
+                  <tr style="background:#fff">
+                    <th style="padding:6px 8px;text-align:left;color:#9ca3af;font-weight:700">シーズン</th>
+                    <th style="padding:6px 8px;text-align:left;color:#9ca3af;font-weight:700">ブランド</th>
+                    <th style="padding:6px 8px;text-align:left;color:#9ca3af;font-weight:700">企画名</th>
+                    <th style="padding:6px 8px;text-align:left;color:#9ca3af;font-weight:700">サンプル製品名称</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style="padding:6px 8px">2027SS</td>
+                    <td style="padding:6px 8px">TSUCHIYA</td>
+                    <td style="padding:6px 8px">27SS 新メンズ</td>
+                    <td style="padding:6px 8px;font-weight:700">バックパック 組み立て</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
-        <p style="font-size:14px;color:#4b5563;margin-top:12px">設定タブにはフェーズの管理が2段階あります。</p>
+        <div class="point" style="background:#f0f9ff;border-color:#0BBDC4;margin-top:16px">
+          <div class="point-icon">🔄</div>
+          <div>
+            <p style="margin-bottom:6px">新しい製品が選択肢に出てくるまでの流れ</p>
+            <p style="font-weight:400;color:#6b7280">上長が<strong>採番表</strong>に案件を登録 → 試作番号（製番）が自動発行 → <strong>外部スケジュール表</strong>にその番号を入力するとブランド・企画名・製品名が自動補完 → 最短10分おきの自動同期で日報アプリの選択肢にも反映されます。詳しくは<a href="#schedule" style="color:#0A6B70;font-weight:700">「採番表・外部スケジュール表を管理する人向け」</a>を参照してください。</p>
+          </div>
+        </div>
+        <div class="point" style="margin-top:10px">
+          <div class="point-icon">⚠️</div>
+          <p>選びたい製品が一覧に出てこない場合は、まだ採番表・外部スケジュール表に登録されていないか、同期のタイムラグ（最大10分程度）の可能性があります。上長に確認してください。</p>
+        </div>
+        <div class="point" style="margin-top:10px;background:#fefce8;border-color:#ca8a04">
+          <div class="point-icon">⏱️</div>
+          <div>
+            <p style="margin-bottom:6px">「完了」から「作業中」に戻したときと、逆に「完了」にしたときで、反映の速さが違います</p>
+            <p style="font-weight:400;color:#6b7280"><strong>完了→作業中に戻す</strong>：ステータス変更が検知されると<strong>30秒〜1分程度</strong>で選択肢に復活します（2026-08-07改善）。<br><strong>作業中→完了にする</strong>：選択肢から消えるのは<strong>毎週木曜8:00の週次処理</strong>のタイミングのみで、最大1週間ほどタイムラグがあります（意図的な仕様。すぐに消したい場合は上長に相談してください）。</p>
+          </div>
+        </div>
+        <p style="font-size:14px;color:#4b5563;margin-top:16px">設定タブにはフェーズの管理が2段階あります（こちらは今まで通り手入力です）。</p>
         <table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:14px">
           <thead>
             <tr style="background:#f3f4f6">
@@ -317,18 +342,6 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
           <p>初期値はすでに入っているので追加作業は不要です。各リストの <strong>▲/▼ボタン</strong> で表示順を変更できます。日報入力時のドロップダウンにそのまま反映されます。</p>
         </div>
 
-        <div class="point" style="background:#fff8f0;border-color:#f97316;margin-top:16px">
-          <div class="point-icon">⚠️</div>
-          <div>
-            <p style="margin-bottom:6px">製品名は試作スケジュール管理表の表記と完全一致させてください</p>
-            <p style="font-weight:400;color:#6b7280">週次レポートは「製品名」でスケジュール管理表と突合します。名前が少しでも違うと工数・労務費データが集計されません。</p>
-            <p style="font-weight:400;color:#6b7280;margin-top:6px">
-              <span style="color:#dc2626">✗ 悪い例：</span>「スクールバッグ（オールレザー）<strong>型紙作成</strong>」← 作業内容を製品名に含めない<br>
-              <span style="color:#16a34a">✓ 良い例：</span>「スクールバッグ（オールレザー）」← スケジュール管理表の表記そのまま
-            </p>
-            <p style="font-weight:400;color:#6b7280;margin-top:6px">同じ製品で「型紙作成」「組み立て」など工程を区別したい場合は、<strong>フェーズ欄</strong>に入力してください。</p>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -423,6 +436,9 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
       <div class="step-body">
         <h3>作業をタイムラインに追加する</h3>
         <p>タイムラインの「＋ 作業を追加」バーをタップします。<strong>サンプル製造</strong>か<strong>その他</strong>を選んで内容を入力し「保存」を押してください。</p>
+        <div class="tip">
+          <p><strong>サンプル製品名称</strong>は入力欄に文字を打つと候補が絞り込まれる検索方式です。選ぶと製番・シーズン・ブランド・企画名がバッジで表示されるので、同じ名前の製品が複数ある場合はここで見分けてください（製番が未登録の場合は「製番未登録」と表示されます）。</p>
+        </div>
         <div class="mock">
           <div class="mock-label">作業タイムライン</div>
           <div class="mock-timeline">
@@ -449,16 +465,26 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
                 <div style="flex:1;padding:8px;background:#fff;border:2px solid #e5e7eb;border-radius:8px;font-size:12px;font-weight:700;color:#9ca3af;text-align:center">📋 その他</div>
               </div>
               <div class="mock-modal-field">
-                <label>サンプル製品名称</label>
-                <div class="mock-input active">バックパック 組み立て ▼</div>
+                <label>サンプル製品名称（検索して選ぶ）</label>
+                <div class="mock-input active" style="text-align:left">バックパック</div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+                  <span style="background:#f0eeff;color:#5e43a0;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:800">TK-G27-0012</span>
+                  <span style="background:#e0f7f8;color:#0A6B70;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:800">2027SS</span>
+                  <span style="background:#e8ecef;color:#2d3748;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:800">TSUCHIYA</span>
+                  <div style="width:100%;font-size:12px;font-weight:700;color:#4b5563">27SS 新メンズ｜バックパック 組み立て</div>
+                </div>
               </div>
               <div class="mock-modal-field">
                 <label>フェーズ 大分類</label>
                 <div class="mock-input">1st ▼</div>
               </div>
               <div class="mock-modal-field">
-                <label>フェーズ 中分類（任意）</label>
+                <label>フェーズ 中分類 <span style="color:#dc2626;font-weight:800">必須</span></label>
                 <div class="mock-input" style="color:#6b7280">型紙・抜き型作成/修正 ▼</div>
+              </div>
+              <div class="mock-modal-field">
+                <label>作業時間（分）</label>
+                <div class="mock-input active" style="text-align:left">200</div>
               </div>
               <div class="mock-modal-field">
                 <label>メモ（任意）</label>
@@ -500,9 +526,13 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
         <div class="point" style="margin-top:8px;background:#fefce8;border-color:#ca8a04">
           <div class="point-icon">📋</div>
           <div>
-            <p style="margin-bottom:6px">「フェーズ 中分類」は<strong>任意</strong>ですが、入力すると集計レポートで「型紙作成に何時間かかったか」が企画ごとに比較できるようになります。</p>
-            <p style="font-weight:400;color:#6b7280;font-size:13px">中分類の選択肢はフェーズ大分類が「中分類あり」に設定されている場合のみ表示されます（初期設定ではモック・1st〜最終・色増しサンプルが対象）。</p>
+            <p style="margin-bottom:6px">「フェーズ 中分類」は、フェーズ大分類が「中分類あり」に設定されている場合は<strong style="color:#dc2626">必須</strong>です（初期設定ではモック・1st〜最終・色増しサンプルが対象）。入力すると集計レポートで「型紙作成に何時間かかったか」が企画ごとに比較できるようになります。</p>
+            <p style="font-weight:400;color:#6b7280;font-size:13px">対象外のフェーズ（試験体・量産・エイジングサンプル・修理・SOP・治具）では中分類欄自体が表示されません。</p>
           </div>
+        </div>
+        <div class="point" style="margin-top:8px">
+          <div class="point-icon">⏱️</div>
+          <p><strong>作業時間（分）</strong>欄に数値を直接入力することもできます。タイムラインのバーをドラッグして微調整する方法（次のSTEP4）と併用できます。</p>
         </div>
       </div>
     </div>
@@ -687,6 +717,172 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
         </div>
       </div>
     </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ===== PART C: 採番表・外部スケジュール表を管理する人向け ===== -->
+<div class="section" id="schedule">
+  <div class="part-header" style="border-left:5px solid #5e43a0">
+    <div class="part-icon">🔢</div>
+    <div>
+      <h2>採番表・外部スケジュール表を管理する人向け</h2>
+      <p>案件の登録・試作番号（製番）の発行・スケジュール管理を行う人（上長）向けの説明です。日報アプリを毎日使う職人の方は読む必要はありません。</p>
+    </div>
+  </div>
+
+  <div class="steps">
+
+    <!-- C-1 概要 -->
+    <div class="step" id="schedule-overview">
+      <div class="step-num" style="background:#5e43a0;color:#fff">C1</div>
+      <div class="step-body">
+        <h3>採番表・外部スケジュール表とは</h3>
+        <p>試作課には3つのシステムがあり、下図の順に情報が流れます。</p>
+        <div class="mock">
+          <div class="mock-label">データの流れ</div>
+          <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;font-weight:700">
+            <div style="background:#f0eeff;border:2px solid #5e43a0;border-radius:10px;padding:10px 14px;color:#5e43a0">① 採番表：案件の原本。ここに登録すると試作番号が自動で発行される</div>
+            <div style="text-align:center;color:#9ca3af;font-size:16px">↓ 上長が試作番号を入力/選択</div>
+            <div style="background:#e0f7f8;border:2px solid #0BBDC4;border-radius:10px;padding:10px 14px;color:#0A6B70">② 外部スケジュール表：進行管理（担当者・フェーズ・日程・ステータス）</div>
+            <div style="text-align:center;color:#9ca3af;font-size:16px">↓ 最短10分おきに自動同期</div>
+            <div style="background:#f3f4f6;border:2px solid #374151;border-radius:10px;padding:10px 14px;color:#374151">③ 日報アプリ：職人が作業時間を記録する選択肢に反映</div>
+          </div>
+        </div>
+        <div class="point">
+          <div class="point-icon">💡</div>
+          <p>案件情報（ブランド・企画名・製品名）の<strong>正本は採番表</strong>です。外部スケジュール表・日報アプリはどちらも採番表の内容を参照する側で、逆方向に書き戻すことはありません。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- C-2 製番ルール -->
+    <div class="step" id="seiban-rule">
+      <div class="step-num" style="background:#5e43a0;color:#fff">C2</div>
+      <div class="step-body">
+        <h3>試作番号（製番）のルール</h3>
+        <p>採番表にシーズン・ブランド・区分・企画名・製品名を入力すると、以下のルールで試作番号が自動発行されます。手入力・変更はできません。</p>
+        <div class="mock">
+          <div class="mock-label">フォーマット</div>
+          <div style="display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;padding:12px 0">
+            <span style="background:#f0eeff;color:#5e43a0;border-radius:8px;padding:8px 14px;font-size:20px;font-weight:900">TK</span>
+            <span style="font-size:20px;font-weight:900;color:#9ca3af">-</span>
+            <span style="background:#e0f7f8;color:#0A6B70;border-radius:8px;padding:8px 14px;font-size:20px;font-weight:900">G</span>
+            <span style="background:#fff3e8;color:#9a4a1a;border-radius:8px;padding:8px 14px;font-size:20px;font-weight:900">26</span>
+            <span style="font-size:20px;font-weight:900;color:#9ca3af">-</span>
+            <span style="background:#e8ecef;color:#2d3748;border-radius:8px;padding:8px 14px;font-size:20px;font-weight:900">0001</span>
+          </div>
+          <div style="display:flex;text-align:center;font-size:12px;color:#6b7280;gap:4px;flex-wrap:wrap">
+            <div style="flex:1;min-width:90px"><strong style="color:#5e43a0">ブランド</strong><br>コード2文字</div>
+            <div style="flex:1;min-width:90px"><strong style="color:#0A6B70">区分</strong><br>G=製品 / P=販促</div>
+            <div style="flex:1;min-width:90px"><strong style="color:#9a4a1a">年</strong><br>登録時シーズンの下2桁</div>
+            <div style="flex:1;min-width:90px"><strong style="color:#2d3748">連番</strong><br>4桁ゼロ埋め</div>
+          </div>
+        </div>
+
+        <p style="font-size:14px;color:#4b5563;margin-top:16px;font-weight:700">ブランドコード一覧</p>
+        <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:14px">
+          <thead>
+            <tr style="background:#f3f4f6">
+              <th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e5e7eb;font-size:13px;color:#6b7280">コード</th>
+              <th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e5e7eb;font-size:13px;color:#6b7280">ブランド</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom:1px solid #f3f4f6"><td style="padding:8px 12px;font-weight:700">TK</td><td style="padding:8px 12px;color:#4b5563">TSUCHIYA KABAN</td></tr>
+            <tr style="border-bottom:1px solid #f3f4f6"><td style="padding:8px 12px;font-weight:700">OB</td><td style="padding:8px 12px;color:#4b5563">objcts.io</td></tr>
+            <tr style="border-bottom:1px solid #f3f4f6"><td style="padding:8px 12px;font-weight:700">AT</td><td style="padding:8px 12px;color:#4b5563">ATTITU</td></tr>
+            <tr style="border-bottom:1px solid #f3f4f6"><td style="padding:8px 12px;font-weight:700">LF</td><td style="padding:8px 12px;color:#4b5563">LASTFRAME</td></tr>
+            <tr style="border-bottom:1px solid #f3f4f6"><td style="padding:8px 12px;font-weight:700">TR</td><td style="padding:8px 12px;color:#4b5563">TSUCHIYA RANDOSERU</td></tr>
+            <tr style="border-bottom:1px solid #f3f4f6"><td style="padding:8px 12px;font-weight:700">GR</td><td style="padding:8px 12px;color:#4b5563">grirose</td></tr>
+            <tr><td style="padding:8px 12px;font-weight:700">DP</td><td style="padding:8px 12px;color:#4b5563">depsoa</td></tr>
+          </tbody>
+        </table>
+
+        <div class="point" style="margin-top:16px">
+          <div class="point-icon">🔢</div>
+          <div>
+            <p style="margin-bottom:6px">連番のルール</p>
+            <p style="font-weight:400;color:#6b7280">連番は<strong>区分（G/P）ごと・年ごとにリセット</strong>されます（毎年0001から再スタート）。ブランドをまたいで同じ区分・同じ年なら通し番号になります。</p>
+          </div>
+        </div>
+        <div class="point" style="margin-top:10px">
+          <div class="point-icon">📅</div>
+          <div>
+            <p style="margin-bottom:6px">「年」はシーズンが変わっても変更されない</p>
+            <p style="font-weight:400;color:#6b7280">番号の「年」部分は<strong>登録した時点</strong>のシーズン表記から決まります。あとでシーズン表記が変わっても（例：26AW→27SS）、番号自体は変わりません（番号を変えると日報側の記録との紐付けが崩れるため）。</p>
+          </div>
+        </div>
+        <div class="point" style="margin-top:10px">
+          <div class="point-icon">🚫</div>
+          <div>
+            <p style="margin-bottom:6px">番号の自動使い回しはしない</p>
+            <p style="font-weight:400;color:#6b7280">同じブランド・企画名の案件が既にあっても、採番表に新規登録すると<strong>必ず新しい番号</strong>が発行されます。誤登録を防ぐため、既存行があれば「類似候補」欄に参考として表示されますが、実際に番号を使い回したい場合は外部スケジュール表側で既存の番号を直接入力してください。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- C-3 登録・入力の流れ -->
+    <div class="step" id="schedule-flow">
+      <div class="step-num" style="background:#5e43a0;color:#fff">C3</div>
+      <div class="step-body">
+        <h3>登録・入力の流れ</h3>
+        <ul style="font-size:14px;color:#4b5563;line-height:2;padding-left:20px">
+          <li><strong>採番表</strong>にシーズン・型振・VMD、ブランド、区分（製品/販促）、企画名、製品名を入力する</li>
+          <li>試作番号が自動で発行される（同じ企画に既存番号があれば「類似候補」欄にヒントが出る）</li>
+          <li><strong>外部スケジュール表</strong>側で行を作り、A列に発行された試作番号を入力または選択する</li>
+          <li>シーズン・ブランド・区分・企画名・製品名（B〜F列）が自動で補完される</li>
+          <li>担当者・サンプル担当・サンプルフェーズ・日程・ステータス（G列以降）はこれまで通り手入力で進行管理する</li>
+          <li>最短10分おきの自動同期で、日報アプリの製品選択肢にも反映される</li>
+        </ul>
+        <div class="point" style="background:#fff8f0;border-color:#f97316;margin-top:16px">
+          <div class="point-icon">⚠️</div>
+          <p>外部スケジュール表への行の追加・削除は<strong>システムでは自動で行いません</strong>。行を作るかどうか・いつ作るかは上長の判断です。</p>
+        </div>
+        <div class="tip" style="margin-top:12px">
+          <p>過去に発行した番号を製品名・ブランド・企画名から検索したいときは、外部スケジュール表を開いて図形ボタン（またはメニュー「🔍 採番表検索」）からサイドバーを開いてください。試作番号はクリックまたは📋アイコンでコピーできます。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- C-4 反映タイミング -->
+    <div class="step" id="schedule-timing">
+      <div class="step-num" style="background:#5e43a0;color:#fff">C4</div>
+      <div class="step-body">
+        <h3>ステータス変更が日報アプリに反映されるタイミング</h3>
+        <p>外部スケジュール表のステータス（O列）を編集すると日報アプリの製品マスタが自動で同期されますが、<strong>「復活」と「削除」で反映の速さが違います</strong>。</p>
+
+        <table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:14px">
+          <thead>
+            <tr style="background:#f3f4f6">
+              <th style="padding:10px 14px;text-align:left;border-bottom:2px solid #e5e7eb;font-size:13px;color:#6b7280">操作</th>
+              <th style="padding:10px 14px;text-align:left;border-bottom:2px solid #e5e7eb;font-size:13px;color:#6b7280">日報アプリへの反映</th>
+              <th style="padding:10px 14px;text-align:left;border-bottom:2px solid #e5e7eb;font-size:13px;color:#6b7280">仕組み</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom:1px solid #f3f4f6">
+              <td style="padding:10px 14px;font-weight:700;color:#16a34a">完了 → 作業中に戻す</td>
+              <td style="padding:10px 14px;font-weight:700">30秒〜1分程度</td>
+              <td style="padding:10px 14px;color:#4b5563">ステータス編集を検知した瞬間に自動同期が走る（即時・イベント駆動）</td>
+            </tr>
+            <tr>
+              <td style="padding:10px 14px;font-weight:700;color:#dc2626">作業中 → 完了にする</td>
+              <td style="padding:10px 14px;font-weight:700">最大1週間程度</td>
+              <td style="padding:10px 14px;color:#4b5563">その製品の全行が完了/中断になった時点で削除対象になるが、実際に削除されるのは<strong>毎週木曜8:00の週次処理</strong>のみ</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="point" style="margin-top:16px">
+          <div class="point-icon">💡</div>
+          <p>「削除」側だけ遅いのは意図した設計です。誤って早く消してしまうより、しばらく選択肢に残っていた方が実害が少ないという判断のため（2026-08-07時点でこの方針を維持）。すぐに選択肢から消したい場合は、上長がGASエディタから<code>archiveCompletedSchedules()</code>を手動実行することもできます。</p>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 

@@ -290,19 +290,12 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
         <div class="point" style="background:#f0f9ff;border-color:#0BBDC4;margin-top:16px">
           <div class="point-icon">🔄</div>
           <div>
-            <p style="margin-bottom:6px">新しい製品が選択肢に出てくるまでの流れ</p>
-            <p style="font-weight:400;color:#6b7280">上長が<strong>採番表</strong>に案件を登録 → 試作番号（製番）が自動発行 → <strong>外部スケジュール表</strong>にその番号を入力するとブランド・企画名・製品名が自動補完 → 最短10分おきの自動同期で日報アプリの選択肢にも反映されます。詳しくは<a href="#schedule" style="color:#0A6B70;font-weight:700">「採番表・外部スケジュール表を管理する人向け」</a>を参照してください。</p>
-          </div>
-        </div>
-        <div class="point" style="margin-top:10px">
-          <div class="point-icon">⚠️</div>
-          <p>選びたい製品が一覧に出てこない場合は、まだ採番表・外部スケジュール表に登録されていないか、同期のタイムラグ（最大10分程度）の可能性があります。上長に確認してください。</p>
-        </div>
-        <div class="point" style="margin-top:10px;background:#fefce8;border-color:#ca8a04">
-          <div class="point-icon">⏱️</div>
-          <div>
-            <p style="margin-bottom:6px">「完了」から「作業中」に戻したときと、逆に「完了」にしたときで、反映の速さが違います</p>
-            <p style="font-weight:400;color:#6b7280"><strong>完了→作業中に戻す</strong>：ステータス変更が検知されると<strong>30秒〜1分程度</strong>で選択肢に復活します（2026-08-07改善）。<br><strong>作業中→完了にする</strong>：選択肢から消えるのは<strong>毎週木曜8:00の週次処理</strong>のタイミングのみで、最大1週間ほどタイムラグがあります（意図的な仕様。すぐに消したい場合は上長に相談してください）。</p>
+            <p style="margin-bottom:8px;font-weight:700">製品は採番表・外部スケジュール表から自動反映されます（詳しくは<a href="#schedule" style="color:#0A6B70">C. 採番表・外部スケジュール表を管理する人向け</a>）</p>
+            <ul style="font-size:13px;color:#6b7280;line-height:1.9;padding-left:18px;margin:0">
+              <li>選びたい製品が無い場合：未登録か同期待ち（最大10分）。上長に確認</li>
+              <li>完了→作業中に戻す：<strong style="color:#16a34a">約1分</strong>で復活</li>
+              <li>作業中→完了にする：消えるのは<strong style="color:#dc2626">毎週木曜8:00</strong>（最大1週間ラグ）</li>
+            </ul>
           </div>
         </div>
         <p style="font-size:14px;color:#4b5563;margin-top:16px">設定タブにはフェーズの管理が2段階あります（こちらは今まで通り手入力です）。</p>

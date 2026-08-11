@@ -5,3 +5,6 @@ Thumbs.db
 # Editor
 .vscode/
 *.swp
+
+# Claude Code（個人設定・共有しない）
+.claude/settings.local.json

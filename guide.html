@@ -190,6 +190,8 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
         <li><a href="#seiban-rule"><span class="toc-part" style="background:#5e43a0;color:#fff">C2</span>試作番号（製番）のルール</a></li>
         <li><a href="#schedule-flow"><span class="toc-part" style="background:#5e43a0;color:#fff">C3</span>登録・入力の流れ</a></li>
         <li><a href="#schedule-timing"><span class="toc-part" style="background:#5e43a0;color:#fff">C4</span>ステータス変更が日報アプリに反映されるタイミング</a></li>
+        <li><a href="#schedule-filter"><span class="toc-part" style="background:#5e43a0;color:#fff">C5</span>スケジュール表の見え方のルール（フィルタ表示）</a></li>
+        <li><a href="#schedule-troubles"><span class="toc-part" style="background:#5e43a0;color:#fff">C6</span>困ったとき・気をつけること</a></li>
       </ul>
     </div>
   </div>
@@ -292,7 +294,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
           <div>
             <p style="margin-bottom:8px;font-weight:700">製品は採番表・外部スケジュール表から自動反映されます（詳しくは<a href="#schedule" style="color:#0A6B70">C. 採番表・外部スケジュール表について：使い方</a>）</p>
             <ul style="font-size:13px;color:#6b7280;line-height:1.9;padding-left:18px;margin:0">
-              <li>選びたい製品が無い場合：未登録か同期待ち（最大10分）。上長に確認</li>
+              <li>選びたい製品が無い場合：未登録か同期待ち（最大10分）。上長に確認。急ぐときは外部スケジュール表のC2「✅今すぐ同期」にチェックを入れると1分以内に反映されます</li>
               <li>完了→作業中に戻す：<strong style="color:#16a34a">約1分</strong>で復活</li>
               <li>作業中→完了にする：消えるのは<strong style="color:#dc2626">毎週木曜8:00</strong>（最大1週間ラグ）</li>
             </ul>
@@ -431,6 +433,9 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
         <p>タイムラインの「＋ 作業を追加」バーをタップします。<strong>サンプル製造</strong>か<strong>その他</strong>を選んで内容を入力し「保存」を押してください。</p>
         <div class="tip">
           <p><strong>サンプル製品名称</strong>は入力欄に文字を打つと候補が絞り込まれる検索方式です。選ぶと製番・シーズン・ブランド・企画名がバッジで表示されるので、同じ名前の製品が複数ある場合はここで見分けてください（製番が未登録の場合は「製番未登録」と表示されます）。</p>
+        </div>
+        <div class="tip">
+          <p>「製番未登録」と表示された製品は、そのままでも日報は提出できますが、集計のときに正しく紐づかなくなってしまいます。見かけたら上長に伝えてください。</p>
         </div>
         <div class="mock">
           <div class="mock-label">作業タイムライン</div>
@@ -721,7 +726,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
     <div class="part-icon">🔢</div>
     <div>
       <h2>採番表・外部スケジュール表について：使い方</h2>
-      <p>案件の登録・試作番号（製番）の発行・スケジュール管理を行う人（上長）向けの説明です。日報アプリを毎日使う職人の方は読む必要はありません。</p>
+      <p>主に案件の登録・試作番号（製番）の発行・スケジュール管理を行う人（上長）向けの説明です。ただ、日報アプリができてから、職人の方がスケジュール表のステータスを更新したり、採番表に案件を登録したりする場面も出てきました。スケジュール表を触ることがある方は、<a href="#schedule-filter" style="color:#5e43a0">C5（表示のルール）</a>と<a href="#schedule-troubles" style="color:#5e43a0">C6（困ったとき）</a>だけでも目を通してもらえると助かります。</p>
     </div>
   </div>
 
@@ -824,11 +829,11 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
         <h3>登録・入力の流れ</h3>
         <ul style="font-size:14px;color:#4b5563;line-height:2;padding-left:20px">
           <li><strong>採番表</strong>にシーズン・型振・VMD、ブランド、区分（製品/販促）、企画名、製品名を入力する</li>
-          <li>試作番号が自動で発行される（同じ企画に既存番号があれば「類似候補」欄にヒントが出る）</li>
+          <li>試作番号が自動で発行される（同じ企画に既存番号があれば「類似候補」欄にヒントが出る）。発行されないときは、外部スケジュール表のC3「✅採番表を処理」にチェックを入れてみてください</li>
           <li><strong>外部スケジュール表</strong>側で行を作り、A列に発行された試作番号を入力または選択する</li>
           <li>シーズン・ブランド・区分・企画名・製品名（B〜F列）が自動で補完される</li>
           <li>担当者・サンプル担当・サンプルフェーズ・日程・ステータス（G列以降）はこれまで通り手入力で進行管理する</li>
-          <li>最短10分おきの自動同期で、日報アプリの製品選択肢にも反映される</li>
+          <li>最短10分おきの自動同期で、日報アプリの製品選択肢にも反映される。待てないときは外部スケジュール表のC2「✅今すぐ同期」にチェックを入れると1分以内に反映されます</li>
         </ul>
         <div class="point" style="background:#fff8f0;border-color:#f97316;margin-top:16px">
           <div class="point-icon">⚠️</div>
@@ -873,6 +878,106 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
           <div class="point-icon">💡</div>
           <p>「削除」側だけ遅いのは意図した設計です。誤って早く消してしまうより、しばらく選択肢に残っていた方が実害が少ないという判断のため（2026-08-07時点でこの方針を維持）。すぐに選択肢から消したい場合は、上長がGASエディタから<code>archiveCompletedSchedules()</code>を手動実行することもできます。</p>
         </div>
+        <div class="tip" style="margin-top:12px">
+          <p>上の表の「完了→作業中に戻す」は、外部スケジュール表のC2「✅今すぐ同期」にチェックを入れても同じことができます。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- C-5 フィルタ表示 -->
+    <div class="step" id="schedule-filter">
+      <div class="step-num" style="background:#5e43a0;color:#fff">C5</div>
+      <div class="step-body">
+        <h3>スケジュール表の見え方のルール（フィルタ表示）</h3>
+        <p>これまで外部スケジュール表は上長が日程を入れ、職人は見るだけの表でした。日報アプリができてから職人もステータス変更や採番登録で触るようになり、「完了・中断の行を隠す人と、表示したままにする人が混在して見づらい」という声が出ています。</p>
+
+        <div class="point" style="margin-top:14px">
+          <div class="point-icon">📌</div>
+          <div>
+            <p style="margin-bottom:6px">表の上の「フィルタ」ボタン（基本フィルタ）で行を隠すのは避けてください</p>
+            <p style="font-weight:400;color:#6b7280">基本フィルタで隠すと、そのシートを開いている<strong>全員の見え方</strong>が変わってしまいます。代わりに、各自「フィルタ表示」をひとつ作って使ってください。</p>
+          </div>
+        </div>
+
+        <div class="mock" style="margin-top:12px">
+          <div class="mock-label">フィルタ表示の作り方</div>
+          <div style="font-size:13px;color:#4b5563;line-height:2">
+            <div>① メニュー「データ」＞「フィルタ表示」＞「新しいフィルタ表示を作成」</div>
+            <div>② 左上の名前欄に自分の名前を入れる（例：「山田用（進行中のみ）」）</div>
+            <div>③ ステータス列（O列）のフィルタで「完了」「中断」のチェックを外す</div>
+          </div>
+        </div>
+
+        <div class="tip" style="margin-top:12px">
+          <p>フィルタ表示は<strong>自分の画面だけ</strong>に効き、他の人の見え方は変わりません。次に開いたときも、メニュー「データ」＞「フィルタ表示」から自分の名前のものを選べば、同じ見え方に戻せます。フィルタ表示を使っている間も、ステータスを1セルずつ書き換える操作はこれまで通り問題ありません。</p>
+        </div>
+
+        <div class="point" style="background:#fff8f0;border-color:#f97316;margin-top:16px">
+          <div class="point-icon">⚠️</div>
+          <div>
+            <p style="margin-bottom:6px">試作番号を入れるときは、いったん全部の行を表示してください</p>
+            <p style="font-weight:400;color:#6b7280">行が隠れた状態でコピー＆貼り付けをしたり、セルの右下をつまんで下にのばしたりすると、<strong>隠れている行にも値が入ってしまい</strong>、関係ない製品に別の番号が付いてしまうことがあります（2026年8月に実際に起きて、後片付けが必要になりました）。<br>試作番号（A列）を入れるとき、特に複数行まとめて入れるときは、右上の「フィルタ表示」を閉じて（またはメニューから「なし」を選んで）全行を出してから行ってください。1行ずつ手で打つ場合も、念のため全表示の状態で行うと安心です。貼り付けたあとは、A列の番号と、自動で入ったB〜F列（ブランド・企画名・製品名）が同じ行で合っているかを一度見てもらえると確実です。</p>
+          </div>
+        </div>
+
+        <div class="point" style="margin-top:12px">
+          <div class="point-icon">🤝</div>
+          <p>スケジュール表の日程や担当者の欄は、これまで通り上長が管理しています。職人の方は、担当している製品のステータスを更新したり、必要に応じて採番表に案件を登録したりする場面が増えてきました。日程や担当者の欄を動かしたいときは、上長にひと声かけてからにしてもらえると安心です。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- C-6 困ったとき -->
+    <div class="step" id="schedule-troubles">
+      <div class="step-num" style="background:#5e43a0;color:#fff">C6</div>
+      <div class="step-body">
+        <h3>困ったとき・気をつけること</h3>
+        <table style="width:100%;border-collapse:collapse;margin-top:4px;font-size:14px">
+          <thead>
+            <tr style="background:#f3f4f6">
+              <th style="padding:10px 14px;text-align:left;border-bottom:2px solid #e5e7eb;font-size:13px;color:#6b7280;width:30%">症状</th>
+              <th style="padding:10px 14px;text-align:left;border-bottom:2px solid #e5e7eb;font-size:13px;color:#6b7280;width:32%">考えられる原因</th>
+              <th style="padding:10px 14px;text-align:left;border-bottom:2px solid #e5e7eb;font-size:13px;color:#6b7280;width:38%">対処</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom:1px solid #f3f4f6">
+              <td style="padding:10px 14px;font-weight:700">日報アプリに製品が出てこない／「製番未登録」と表示される</td>
+              <td style="padding:10px 14px;color:#4b5563">採番表に未登録か、外部スケジュール表のA列に番号が入っていないか、同期待ち</td>
+              <td style="padding:10px 14px;color:#4b5563">上長に伝えてください。急ぐならC2「✅今すぐ同期」</td>
+            </tr>
+            <tr style="border-bottom:1px solid #f3f4f6">
+              <td style="padding:10px 14px;font-weight:700">採番表で製品名を直したのに、日報アプリの名前が変わらない</td>
+              <td style="padding:10px 14px;color:#4b5563">外部スケジュール表でその番号の行がすべて「完了」または「中断」になっていると、同期の対象から外れる</td>
+              <td style="padding:10px 14px;color:#4b5563">ステータスを「作業中」に戻すと1分ほどで反映されます。本当に完了している製品の場合は、いったん作業中に戻して反映を確認してから、あらためて完了に戻してください</td>
+            </tr>
+            <tr style="border-bottom:1px solid #f3f4f6">
+              <td style="padding:10px 14px;font-weight:700">外部スケジュール表で製品名を書き換えたのにアプリが変わらない</td>
+              <td style="padding:10px 14px;color:#4b5563">製品名・ブランド・企画名の正本は採番表</td>
+              <td style="padding:10px 14px;color:#4b5563">直すのは採番表側にしてください。外部表のB〜F列は、番号を入れ直すと自動で補完し直されます</td>
+            </tr>
+            <tr style="border-bottom:1px solid #f3f4f6">
+              <td style="padding:10px 14px;font-weight:700">自動補完も同期も急に動かなくなった</td>
+              <td style="padding:10px 14px;color:#4b5563">外部スケジュール表のA1セルの「製番」という文字が消えている</td>
+              <td style="padding:10px 14px;color:#4b5563">A1が空になるとシステムが列を見失います（2026-08-25に実際に発生）。A1の「製番」は消さないようにしてください</td>
+            </tr>
+            <tr style="border-bottom:1px solid #f3f4f6">
+              <td style="padding:10px 14px;font-weight:700">同じ製品なのに番号が2つある</td>
+              <td style="padding:10px 14px;color:#4b5563">企画名の書き方の違いなどで、採番表に二重登録されたケース</td>
+              <td style="padding:10px 14px;color:#4b5563">登録前に「🔍 採番表検索」で同じ製品がないか確認してください。もし二重になっているのを見つけたら、上長に伝えてください。どちらを残すかの判断と削除は上長が行います（削除前に日報ログ・外部表で使われていないかを確認）</td>
+            </tr>
+            <tr style="border-bottom:1px solid #f3f4f6">
+              <td style="padding:10px 14px;font-weight:700">バリエーション（大小・仕様違い）はどう登録する？</td>
+              <td style="padding:10px 14px;color:#4b5563">－</td>
+              <td style="padding:10px 14px;color:#4b5563">1製品1番号で登録します（例：かぶせトート 大（ペイント）／大（ロック）／小（ペイント）／小（ロック）で4番号）</td>
+            </tr>
+            <tr>
+              <td style="padding:10px 14px;font-weight:700">一度発行した番号を後から変えたい</td>
+              <td style="padding:10px 14px;color:#4b5563">－</td>
+              <td style="padding:10px 14px;color:#4b5563">番号は変えないでください。変えると日報側に古い番号が残ってしまい、職人が古い方を選んでしまうことがあります</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 

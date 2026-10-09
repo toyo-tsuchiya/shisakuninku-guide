@@ -150,7 +150,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
   <div class="cover-badges">
     <a class="cover-badge" href="#admin">⚙️ 設定する人向け</a>
     <a class="cover-badge" href="#step1">📝 日報を入れる人向け</a>
-    <a class="cover-badge" href="#schedule">🔢 採番表・外部スケジュール表について：使い方</a>
+    <a class="cover-badge" href="#schedule">🔢 採番表・【試作スケジュール】自社について：使い方</a>
   </div>
 </div>
 
@@ -184,9 +184,9 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
   </div>
   <div class="toc-cols" style="margin-top:24px;grid-template-columns:1fr">
     <div>
-      <div class="toc-col-label">🔢 採番表・外部スケジュール表を管理する人</div>
+      <div class="toc-col-label">🔢 採番表・【試作スケジュール】自社を管理する人</div>
       <ul class="toc-list">
-        <li><a href="#schedule"><span class="toc-part" style="background:#5e43a0;color:#fff">C1</span>採番表・外部スケジュール表とは</a></li>
+        <li><a href="#schedule"><span class="toc-part" style="background:#5e43a0;color:#fff">C1</span>採番表・【試作スケジュール】自社とは</a></li>
         <li><a href="#seiban-rule"><span class="toc-part" style="background:#5e43a0;color:#fff">C2</span>試作番号（製番）のルール</a></li>
         <li><a href="#schedule-flow"><span class="toc-part" style="background:#5e43a0;color:#fff">C3</span>登録・入力の流れ</a></li>
         <li><a href="#schedule-timing"><span class="toc-part" style="background:#5e43a0;color:#fff">C4</span>ステータス変更が日報アプリに反映されるタイミング</a></li>
@@ -262,7 +262,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
       <div class="step-num admin">A3</div>
       <div class="step-body">
         <h3>製品はもう手入力しない（採番表から自動で反映）</h3>
-        <p>以前は設定タブの「👜 製品管理」から製品を手入力していましたが、現在は<strong>採番表・外部スケジュール表から自動で同期される</strong>仕組みに変わりました。設定タブの「製品管理」は一覧表示のみの<strong>読み取り専用</strong>です。</p>
+        <p>以前は設定タブの「👜 製品管理」から製品を手入力していましたが、現在は<strong>採番表・【試作スケジュール】自社から自動で同期される</strong>仕組みに変わりました。設定タブの「製品管理」は一覧表示のみの<strong>読み取り専用</strong>です。</p>
         <div class="mock">
           <div class="mock-label">設定タブ ＞ 製品一覧（読み取り専用）</div>
           <div class="mock-acc">
@@ -292,9 +292,9 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
         <div class="point" style="background:#f0f9ff;border-color:#0BBDC4;margin-top:16px">
           <div class="point-icon">🔄</div>
           <div>
-            <p style="margin-bottom:8px;font-weight:700">製品は採番表・外部スケジュール表から自動反映されます（詳しくは<a href="#schedule" style="color:#0A6B70">C. 採番表・外部スケジュール表について：使い方</a>）</p>
+            <p style="margin-bottom:8px;font-weight:700">製品は採番表・【試作スケジュール】自社から自動反映されます（詳しくは<a href="#schedule" style="color:#0A6B70">C. 採番表・【試作スケジュール】自社について：使い方</a>）</p>
             <ul style="font-size:13px;color:#6b7280;line-height:1.9;padding-left:18px;margin:0">
-              <li>選びたい製品が無い場合：未登録か同期待ち（最大10分）。上長に確認。急ぐときは外部スケジュール表のC2「✅今すぐ同期」にチェックを入れると1分以内に反映されます</li>
+              <li>選びたい製品が無い場合：未登録か同期待ち（最大10分）。上長に確認。急ぐときは【試作スケジュール】自社のC2「✅今すぐ同期」にチェックを入れると1分以内に反映されます</li>
               <li>完了→作業中に戻す：<strong style="color:#16a34a">約1分</strong>で復活</li>
               <li>作業中→完了にする：消えるのは<strong style="color:#dc2626">毎週木曜8:00</strong>（最大1週間ラグ）</li>
             </ul>
@@ -610,6 +610,11 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
           <div class="point-icon">⚠️</div>
           <p>提出前に「職人名・日付・作業内容」を必ず確認してください。提出後の修正はスプレッドシートから直接行ってください。</p>
         </div>
+        <div class="tip" style="margin-top:12px">
+          <p><strong>入力の途中で画面を閉じても大丈夫です。</strong>入力した内容は、使っているスマホやPCに自動で一時保存されます。次に画面を開くと「入力途中の日報があります。続きから入力しますか？」と聞かれるので、「OK」を押すと続きから入力できます。「キャンセル」を押すと、一時保存した内容は消えます。<br>
+          ・一時保存は、提出すると消えます。3日より前の一時保存は表示されません。<br>
+          ・一時保存は、入力していた端末だけに残ります。スマホで途中まで入力して、PCで続きを入力することはできません。</p>
+        </div>
       </div>
     </div>
 
@@ -720,12 +725,12 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
 
 <hr class="divider">
 
-<!-- ===== PART C: 採番表・外部スケジュール表について：使い方 ===== -->
+<!-- ===== PART C: 採番表・【試作スケジュール】自社について：使い方 ===== -->
 <div class="section" id="schedule">
   <div class="part-header" style="border-left:5px solid #5e43a0">
     <div class="part-icon">🔢</div>
     <div>
-      <h2>採番表・外部スケジュール表について：使い方</h2>
+      <h2>採番表・【試作スケジュール】自社について：使い方</h2>
       <p>主に案件の登録・試作番号（製番）の発行・スケジュール管理を行う人（上長）向けの説明です。ただ、日報アプリができてから、職人の方がスケジュール表のステータスを更新したり、採番表に案件を登録したりする場面も出てきました。スケジュール表を触ることがある方は、<a href="#schedule-filter" style="color:#5e43a0">C5（表示のルール）</a>と<a href="#schedule-troubles" style="color:#5e43a0">C6（困ったとき）</a>だけでも目を通してもらえると助かります。</p>
     </div>
   </div>
@@ -736,21 +741,21 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
     <div class="step" id="schedule-overview">
       <div class="step-num" style="background:#5e43a0;color:#fff">C1</div>
       <div class="step-body">
-        <h3>採番表・外部スケジュール表とは</h3>
+        <h3>採番表・【試作スケジュール】自社とは</h3>
         <p>試作課には3つのシステムがあり、下図の順に情報が流れます。</p>
         <div class="mock">
           <div class="mock-label">データの流れ</div>
           <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;font-weight:700">
             <div style="background:#f0eeff;border:2px solid #5e43a0;border-radius:10px;padding:10px 14px;color:#5e43a0">① 採番表：案件の原本。ここに登録すると試作番号が自動で発行される</div>
             <div style="text-align:center;color:#9ca3af;font-size:16px">↓ 上長が試作番号を入力/選択</div>
-            <div style="background:#e0f7f8;border:2px solid #0BBDC4;border-radius:10px;padding:10px 14px;color:#0A6B70">② 外部スケジュール表：進行管理（担当者・フェーズ・日程・ステータス）</div>
+            <div style="background:#e0f7f8;border:2px solid #0BBDC4;border-radius:10px;padding:10px 14px;color:#0A6B70">② 【試作スケジュール】自社：進行管理（担当者・フェーズ・日程・ステータス）</div>
             <div style="text-align:center;color:#9ca3af;font-size:16px">↓ 最短10分おきに自動同期</div>
             <div style="background:#f3f4f6;border:2px solid #374151;border-radius:10px;padding:10px 14px;color:#374151">③ 日報アプリ：職人が作業時間を記録する選択肢に反映</div>
           </div>
         </div>
         <div class="point">
           <div class="point-icon">💡</div>
-          <p>案件情報（ブランド・企画名・製品名）の<strong>正本は採番表</strong>です。外部スケジュール表・日報アプリはどちらも採番表の内容を参照する側で、逆方向に書き戻すことはありません。</p>
+          <p>案件情報（ブランド・企画名・製品名）の<strong>正本は採番表</strong>です。【試作スケジュール】自社・日報アプリはどちらも採番表の内容を参照する側で、逆方向に書き戻すことはありません。</p>
         </div>
       </div>
     </div>
@@ -816,7 +821,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
           <div class="point-icon">🚫</div>
           <div>
             <p style="margin-bottom:6px">番号の自動使い回しはしない</p>
-            <p style="font-weight:400;color:#6b7280">同じブランド・企画名の案件が既にあっても、採番表に新規登録すると<strong>必ず新しい番号</strong>が発行されます。誤登録を防ぐため、既存行があれば「類似候補」欄に参考として表示されますが、実際に番号を使い回したい場合は外部スケジュール表側で既存の番号を直接入力してください。</p>
+            <p style="font-weight:400;color:#6b7280">同じブランド・企画名の案件が既にあっても、採番表に新規登録すると<strong>必ず新しい番号</strong>が発行されます。誤登録を防ぐため、既存行があれば「類似候補」欄に参考として表示されますが、実際に番号を使い回したい場合は【試作スケジュール】自社側で既存の番号を直接入力してください。</p>
           </div>
         </div>
       </div>
@@ -829,18 +834,25 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
         <h3>登録・入力の流れ</h3>
         <ul style="font-size:14px;color:#4b5563;line-height:2;padding-left:20px">
           <li><strong>採番表</strong>にシーズン・型振・VMD、ブランド、区分（製品/販促）、企画名、製品名を入力する</li>
-          <li>試作番号が自動で発行される（同じ企画に既存番号があれば「類似候補」欄にヒントが出る）。発行されないときは、外部スケジュール表のC3「✅採番表を処理」にチェックを入れてみてください</li>
-          <li><strong>外部スケジュール表</strong>側で行を作り、A列に発行された試作番号を入力または選択する</li>
+          <li>試作番号が自動で発行される（同じ企画に既存番号があれば「類似候補」欄にヒントが出る）。発行されないときは、【試作スケジュール】自社のC3「✅採番表を処理」にチェックを入れてみてください</li>
+          <li><strong>【試作スケジュール】自社</strong>側で行を作り、A列に発行された試作番号を入力または選択する</li>
           <li>シーズン・ブランド・区分・企画名・製品名（B〜F列）が自動で補完される</li>
           <li>担当者・サンプル担当・サンプルフェーズ・日程・ステータス（G列以降）はこれまで通り手入力で進行管理する</li>
-          <li>最短10分おきの自動同期で、日報アプリの製品選択肢にも反映される。待てないときは外部スケジュール表のC2「✅今すぐ同期」にチェックを入れると1分以内に反映されます</li>
+          <li>最短10分おきの自動同期で、日報アプリの製品選択肢にも反映される。待てないときは【試作スケジュール】自社のC2「✅今すぐ同期」にチェックを入れると1分以内に反映されます</li>
         </ul>
         <div class="point" style="background:#fff8f0;border-color:#f97316;margin-top:16px">
           <div class="point-icon">⚠️</div>
-          <p>外部スケジュール表への行の追加・削除は<strong>システムでは自動で行いません</strong>。行を作るかどうか・いつ作るかは上長の判断です。</p>
+          <p>【試作スケジュール】自社への行の追加・削除は<strong>システムでは自動で行いません</strong>。行を作るかどうか・いつ作るかは上長の判断です。</p>
+        </div>
+        <div class="point" style="background:#fff8f0;border-color:#f97316;margin-top:12px">
+          <div class="point-icon">⚠️</div>
+          <div>
+            <p style="margin-bottom:6px">試作番号を入れるときは、いったん全部の行を表示してください</p>
+            <p style="font-weight:400;color:#6b7280">行が隠れたままコピー＆貼り付けをすると、<strong>隠れている行にも番号が入ってしまいます</strong>。自分専用のフィルタ表示（<a href="#schedule-filter">C5</a>）でステータス列（O列）を「すべて選択」にしてから入れてください。貼り付けたあとは、A列の番号とB〜F列の製品名が同じ行で合っているかを確認しましょう。</p>
+          </div>
         </div>
         <div class="tip" style="margin-top:12px">
-          <p>過去に発行した番号を製品名・ブランド・企画名から検索したいときは、外部スケジュール表を開いて図形ボタン（またはメニュー「🔍 採番表検索」）からサイドバーを開いてください。試作番号はクリックまたは📋アイコンでコピーできます。</p>
+          <p>過去に発行した番号を製品名・ブランド・企画名から検索したいときは、【試作スケジュール】自社を開いて図形ボタン（またはメニュー「🔍 採番表検索」）からサイドバーを開いてください。試作番号はクリックまたは📋アイコンでコピーできます。</p>
         </div>
       </div>
     </div>
@@ -850,7 +862,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
       <div class="step-num" style="background:#5e43a0;color:#fff">C4</div>
       <div class="step-body">
         <h3>ステータス変更が日報アプリに反映されるタイミング</h3>
-        <p>外部スケジュール表のステータス（O列）を編集すると日報アプリの製品マスタが自動で同期されますが、<strong>「復活」と「削除」で反映の速さが違います</strong>。</p>
+        <p>【試作スケジュール】自社のステータス（O列）を編集すると日報アプリの製品マスタが自動で同期されますが、<strong>「復活」と「削除」で反映の速さが違います</strong>。</p>
 
         <table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:14px">
           <thead>
@@ -879,7 +891,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
           <p>「削除」側だけ遅いのは意図した設計です。誤って早く消してしまうより、しばらく選択肢に残っていた方が実害が少ないという判断のため（2026-08-07時点でこの方針を維持）。すぐに選択肢から消したい場合は、上長がGASエディタから<code>archiveCompletedSchedules()</code>を手動実行することもできます。</p>
         </div>
         <div class="tip" style="margin-top:12px">
-          <p>上の表の「完了→作業中に戻す」は、外部スケジュール表のC2「✅今すぐ同期」にチェックを入れても同じことができます。</p>
+          <p>上の表の「完了→作業中に戻す」は、【試作スケジュール】自社のC2「✅今すぐ同期」にチェックを入れても同じことができます。</p>
         </div>
       </div>
     </div>
@@ -889,34 +901,25 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
       <div class="step-num" style="background:#5e43a0;color:#fff">C5</div>
       <div class="step-body">
         <h3>スケジュール表の見え方のルール（フィルタ表示）</h3>
-        <p>これまで外部スケジュール表は上長が日程を入れ、職人は見るだけの表でした。日報アプリができてから職人もステータス変更や採番登録で触るようになり、「完了・中断の行を隠す人と、表示したままにする人が混在して見づらい」という声が出ています。</p>
 
         <div class="point" style="margin-top:14px">
           <div class="point-icon">📌</div>
           <div>
-            <p style="margin-bottom:6px">表の上の「フィルタ」ボタン（基本フィルタ）で行を隠すのは避けてください</p>
-            <p style="font-weight:400;color:#6b7280">基本フィルタで隠すと、そのシートを開いている<strong>全員の見え方</strong>が変わってしまいます。代わりに、各自「フィルタ表示」をひとつ作って使ってください。</p>
+            <p style="margin-bottom:6px">みんなで見る表は「試作中・予定」が出る状態に揃えます</p>
+            <p style="font-weight:400;color:#6b7280">表の上の「フィルタ」（基本フィルタ）で、完了・中断の行を隠した状態を共通の見え方にしています。基本フィルタの条件を変えると、そのシートを開いている<strong>全員の見え方</strong>が変わってしまうので、特別なことがない限り、変更しないようにしましょう。<br>完了・中断の製品を見たいときは、次の手順で<strong>自分専用の「フィルタ表示」</strong>を作って見てください。<br>フィルタ表示での絞り込みや並び替えは<strong>自分の画面だけ</strong>に効き、他の人の見え方は変わりません。一度作れば、次からはメニュー「データ」＞「フィルタ表示」で表示可能です。</p>
           </div>
         </div>
 
         <div class="mock" style="margin-top:12px">
-          <div class="mock-label">フィルタ表示の作り方</div>
+          <div class="mock-label" style="font-size:14px;color:#1f2937">自分専用のフィルタ表示の作り方（完了・中断も見たいとき）</div>
           <div style="font-size:13px;color:#4b5563;line-height:2">
-            <div>① メニュー「データ」＞「フィルタ表示」＞「新しいフィルタ表示を作成」</div>
-            <div>② 左上の名前欄に自分の名前を入れる（例：「山田用（進行中のみ）」）</div>
-            <div>③ ステータス列（O列）のフィルタで「完了」「中断」のチェックを外す</div>
-          </div>
-        </div>
-
-        <div class="tip" style="margin-top:12px">
-          <p>フィルタ表示は<strong>自分の画面だけ</strong>に効き、他の人の見え方は変わりません。次に開いたときも、メニュー「データ」＞「フィルタ表示」から自分の名前のものを選べば、同じ見え方に戻せます。フィルタ表示を使っている間も、ステータスを1セルずつ書き換える操作はこれまで通り問題ありません。</p>
-        </div>
-
-        <div class="point" style="background:#fff8f0;border-color:#f97316;margin-top:16px">
-          <div class="point-icon">⚠️</div>
-          <div>
-            <p style="margin-bottom:6px">試作番号を入れるときは、いったん全部の行を表示してください</p>
-            <p style="font-weight:400;color:#6b7280">行が隠れた状態でコピー＆貼り付けをしたり、セルの右下をつまんで下にのばしたりすると、<strong>隠れている行にも値が入ってしまい</strong>、関係ない製品に別の番号が付いてしまうことがあります（2026年8月に実際に起きて、後片付けが必要になりました）。<br>試作番号（A列）を入れるとき、特に複数行まとめて入れるときは、右上の「フィルタ表示」を閉じて（またはメニューから「なし」を選んで）全行を出してから行ってください。1行ずつ手で打つ場合も、念のため全表示の状態で行うと安心です。貼り付けたあとは、A列の番号と、自動で入ったB〜F列（ブランド・企画名・製品名）が同じ行で合っているかを一度見てもらえると確実です。</p>
+            <div>① ソートをかけたいところをクリックする（例えば、5行目の項目の部分）</div>
+            <div>② メニュー「データ」＞「フィルタ表示」＞「新しいフィルタ表示を作成」</div>
+            <div>③ 表の上のバーに<strong>色がついたら</strong>（グレーや緑など）、自分専用の表示になっています</div>
+            <img src="data:image/png;base64,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ICIiIiIiIqL6dbrX0k1B1Kg7DlKrkH8zX8hzzGAoAz0gUwhCxHAkPj5eav5r2dMSaalpyL2ZK/W48fOdhJBdP0lNe8Xmvw4OfZq0KhMRERERERERtYyy8rsY7jkMly6l1Iw9geWyG1HfV9QWq2uatppQRyM22Q3bH4Ze1r2gVN6CnZ09DLsZolcva+lDJK6w1K9v35pzDAyeBRERERERERG1bS0fzNAjE6cMWfW0wpWMKzDQ14e9vT2MDIVgxtq61nGuLq4gIiIiIiIioqcHg5mnhM+oUcjLy4ORkRGIiIiIiIiIqH1gMPMUYShDRERERERE1L50BhERERERERERtQoGM0RERERERERErYTBDBERERERERFRK2EwQ0RERERERETUSrRPnz4NIiIiIiIiIiJ6spxd3R8a067oowciIiIiIiIiImp5nMpERERERERERNRKGMwQEREREREREbUSBjNERERERERERK2EwQwRERERERERUSthMENERERERERE1EoYzBARERERERERtRIGM0RERERERERErYTBDFFjLpaAiIiIiIiI6EnQRjt27949BH++Ban/udik41/0HIQxr08EEREREREREVFLaNfBTElhsRTKeE8fBzMbi0aPNzA2ABERERERERFRS2nfFTN370mfxVDGpu/ziD1ySgprGtPdwhT9B/8O7U85VCWArKvOI5xzHbEbrqDnTDnMGzyuCCk/JkJ/SmPHEREREREREVG1dh3MaEr+9QIObNnT5ONNLE3Rw7ptRgzFqQnI0u0HeyshYFFmIPG6PhydjBt/MjP/hc1LLsNj9Qw4dUMT5SHj+GXoNxrMlCIr7jJMaoKZZByYtQtJGkcYyAMQ6G/dcV50bUFFKn6euRG5Excj0Kd2RVj+/rVYE3y91pjTOyvh61b3pdK//wjbMjwRtNwD+uJA7A4s/TKh7oOtvDFrpQImBcmI/Govoi8qodbSgaGTJ8a/pYBtzesvGaF/3ILEijrO1RjK3bUK63ZbYPLOaXCsHlTlIOlgFKKPX4f9ornwaLwojoiIiIiI2gCx7UjE38NQqCzAhD9Nho5uF3RkHeY9cnFBIbrIdPH+1uUNHlemKsNfX1uMgpv5jxbMZEdj2/JjyG3gkMcVTFw9tANn3VcKwYywk3YSoacHYKkQzDSsFHHbw1HU1xs4n4DEqtHi7EKYeXpo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" alt="フィルタ表示中の画面：表の上に色のついたバーが出て、フィルタ表示の名前と範囲が表示される" style="display:block;max-width:100%;border:1px solid #e5e7eb;border-radius:6px;margin:4px 0 8px">
+            <div>④ 左上の名前欄に自分の名前を入れる（例：「山田用（完了も表示）」）</div>
+            <div>⑤ ステータス列（O列）のフィルタで、見たいステータス（「完了」「中断」など）にチェックを入れる</div>
+            <div>⑥ 見終わったら、右上の「×」で閉じる → 共通の見え方（試作中・予定のみ）に戻ります</div>
           </div>
         </div>
 
@@ -943,22 +946,22 @@ body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f7f
           <tbody>
             <tr style="border-bottom:1px solid #f3f4f6">
               <td style="padding:10px 14px;font-weight:700">日報アプリに製品が出てこない／「製番未登録」と表示される</td>
-              <td style="padding:10px 14px;color:#4b5563">採番表に未登録か、外部スケジュール表のA列に番号が入っていないか、同期待ち</td>
+              <td style="padding:10px 14px;color:#4b5563">採番表に未登録か、【試作スケジュール】自社のA列に番号が入っていないか、同期待ち</td>
               <td style="padding:10px 14px;color:#4b5563">上長に伝えてください。急ぐならC2「✅今すぐ同期」</td>
             </tr>
             <tr style="border-bottom:1px solid #f3f4f6">
               <td style="padding:10px 14px;font-weight:700">採番表で製品名を直したのに、日報アプリの名前が変わらない</td>
-              <td style="padding:10px 14px;color:#4b5563">外部スケジュール表でその番号の行がすべて「完了」または「中断」になっていると、同期の対象から外れる</td>
+              <td style="padding:10px 14px;color:#4b5563">【試作スケジュール】自社でその番号の行がすべて「完了」または「中断」になっていると、同期の対象から外れる</td>
               <td style="padding:10px 14px;color:#4b5563">ステータスを「作業中」に戻すと1分ほどで反映されます。本当に完了している製品の場合は、いったん作業中に戻して反映を確認してから、あらためて完了に戻してください</td>
             </tr>
             <tr style="border-bottom:1px solid #f3f4f6">
-              <td style="padding:10px 14px;font-weight:700">外部スケジュール表で製品名を書き換えたのにアプリが変わらない</td>
+              <td style="padding:10px 14px;font-weight:700">【試作スケジュール】自社で製品名を書き換えたのにアプリが変わらない</td>
               <td style="padding:10px 14px;color:#4b5563">製品名・ブランド・企画名の正本は採番表</td>
               <td style="padding:10px 14px;color:#4b5563">直すのは採番表側にしてください。外部表のB〜F列は、番号を入れ直すと自動で補完し直されます</td>
             </tr>
             <tr style="border-bottom:1px solid #f3f4f6">
               <td style="padding:10px 14px;font-weight:700">自動補完も同期も急に動かなくなった</td>
-              <td style="padding:10px 14px;color:#4b5563">外部スケジュール表のA1セルの「製番」という文字が消えている</td>
+              <td style="padding:10px 14px;color:#4b5563">【試作スケジュール】自社のA1セルの「製番」という文字が消えている</td>
               <td style="padding:10px 14px;color:#4b5563">A1が空になるとシステムが列を見失います（2026-08-25に実際に発生）。A1の「製番」は消さないようにしてください</td>
             </tr>
             <tr style="border-bottom:1px solid #f3f4f6">
